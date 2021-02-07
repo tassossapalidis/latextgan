@@ -114,31 +114,31 @@ class Encoder(tf.keras.Model):
         self.hidden_dim = num_units
 
         self.embedding = tf.keras.layers.Embedding(vocab_size, embedding_dim)
-        '''self.gru = tf.keras.layers.GRU(self.hidden_dim, 
-                                       return_sequences = False,
+        self.gru = tf.keras.layers.GRU(self.hidden_dim, 
+                                       return_sequences = True,
                                        return_state = True,
-                                       recurrent_initializer = 'glorot_uniform')'''
+                                       recurrent_initializer = 'glorot_uniform')
         # bidirectional worked better
-        self.gru = tf.keras.layers.Bidirectional(tf.keras.layers.GRU(self.hidden_dim, 
-                                       return_sequences = False,
-                                       return_state = True,
-                                       recurrent_initializer = 'glorot_uniform'))
+        # self.gru = tf.keras.layers.Bidirectional(tf.keras.layers.GRU(self.hidden_dim, 
+        #                                return_sequences = False,
+        #                                return_state = True,
+        #                                recurrent_initializer = 'glorot_uniform'))
         #self.lstm = tf.keras.layers.LSTM(units)
     def call(self, x, hidden):
         # x shape after embedding : (batch_size, seq_len, embedding_dim)
         x = self.embedding(x)
-        #output, state = self.gru(x, initial_state = hidden)
-        output, state_forward, state_backward = self.gru(x, initial_state = hidden)
+        output, state = self.gru(x, initial_state = hidden)
+        #output, state_forward, state_backward = self.gru(x, initial_state = hidden)
         #output = self.lstm(x)
         # state shape: (batch_size, hidden_dim)
 
         #return state
-        return output, tf.concat([state_forward, state_backward], axis = 1)
-        #return output
+        #return output, tf.concat([state_forward, state_backward], axis = 1)
+        return output, state
 
     def initialize_hidden_state(self):
-        #return tf.zeros((self.bs, self.hidden_dim))
-        return [tf.zeros((self.bs, self.hidden_dim)), tf.zeros((self.bs, self.hidden_dim))]
+        return tf.zeros((self.bs, self.hidden_dim))
+        #return [tf.zeros((self.bs, self.hidden_dim)), tf.zeros((self.bs, self.hidden_dim))]
 
 # Define attention mechanism
 class BahdanauAttention(tf.keras.layers.Layer):
@@ -222,10 +222,10 @@ optimizer = tf.keras.optimizers.Adam()
 
 ## train model
 encoder = Encoder(BATCH_SIZE, vocab_size, embedding_dim, units)
-#decoder = Decoder(vocab_size, embedding_dim, units)
+decoder = Decoder(vocab_size, embedding_dim, units)
 
 # below is for bidirectional encoder
-decoder = Decoder(vocab_size, embedding_dim, units*2)
+# decoder = Decoder(vocab_size, embedding_dim, units*2)
 def train_step(inp, tar, hidden):
     loss = 0
 
