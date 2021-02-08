@@ -23,7 +23,7 @@ sents = [x for y in [a.split('<SPLIT>') for a in sents] for x in y]
 #Match [#] or (_anything_)
 bracket_match = '(\[[0-9]+\])|(\([^\)]*\))|(\r)|(\n)'
 sents = [re.sub(bracket_match,'',x) for x in sents]
-sents = [re.sub('""',"",re.sub(' \,', '\,', x)) for x in sents]
+sents = [re.sub('""',"",re.sub(' \,', ',', x)) for x in sents]
 sents = [x.lstrip().rstrip() for x in sents if len(x) > min_sent]
 df_new = pd.DataFrame(sents, columns = ['Sentences'])
 
