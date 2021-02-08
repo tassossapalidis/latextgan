@@ -298,7 +298,8 @@ acc = 0
 for (x, y) in dev_set:
     x = tf.expand_dims(x, 0)
     y = tf.expand_dims(y, 0)
-    hidden = [tf.zeros((1, units)), tf.zeros((1, units))]
+    # hidden = [tf.zeros((1, units)), tf.zeros((1, units))]
+    hidden = tf.zeros((1, units))
     _, enc_hidden = encoder(x, hidden)
     
     dec_hidden = enc_hidden
