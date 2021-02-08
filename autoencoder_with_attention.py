@@ -380,15 +380,17 @@ inputs = tf.convert_to_tensor(inputs)
 
 result = ''
 
-hidden = [tf.zeros((1, units)), tf.zeros((1, units))]
-enc_hidden = encoder(inputs, hidden)
+#hidden = [tf.zeros((1, units)), tf.zeros((1, units))]
+hidden = tf.zeros((1, units))
+enc_output, enc_hidden = encoder(inputs, hidden)
 
 dec_hidden = enc_hidden
 dec_input = tf.expand_dims([targ_lang.word_index['<start>']], 0)
 
 for t in range(40):
     predictions, dec_hidden = decoder(dec_input,
-                                      dec_hidden)
+                                      dec_hidden,
+                                      enc_output)
 
     predicted_id = tf.argmax(predictions[0]).numpy()
 
