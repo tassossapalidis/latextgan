@@ -14,12 +14,16 @@ df = pd.read_csv('wiki_movie_plots_deduped.csv')
 df = df[['Plot']]
 #Don't match Initial. or Mr/Jr/.../"..." or Mrs/ie/eg AND 
 #   don't match future punctuation (i.e. the first two dots in an ellipsis)
-match_str = '(?<!\.)(?<![A-Z])(?<!Mr|Jr|Sr|Fr|Ms|Mz)(?<!Mrs|i\.e|e\.g)[\.|?|!](?!\.)'
+match_str = '(?<!\.)(?<![A-Z])(?<!Mr|Jr|Sr|Fr|Ms|Mz)(?<!Mrs|i\.e|e\.g)[\.](?!\.)'
 min_sent = 5
-sents = [x for y in df.Plot.str.split(match_str).tolist() for x in y]
+sents = df.Plot.str.replace(match_str,".<SPLIT>").tolist()
+sents = [re.sub("!","!<SPLIT>", x) for x in sents]
+sents = [re.sub("\?","?<SPLIT>", x) for x in sents]
+sents = [x for y in [a.split('<SPLIT>') for a in sents] for x in y]
 #Match [#] or (_anything_)
-bracket_match = '(\[[0-9]+\])|(\([^\)]*\))'
+bracket_match = '(\[[0-9]+\])|(\([^\)]*\))|(\r)|(\n)'
 sents = [re.sub(bracket_match,'',x) for x in sents]
+sents = [re.sub('""',"",re.sub(' \,', '\,', x)) for x in sents]
 sents = [x.lstrip().rstrip() for x in sents if len(x) > min_sent]
 df_new = pd.DataFrame(sents, columns = ['Sentences'])
 
