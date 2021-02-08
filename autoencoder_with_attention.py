@@ -79,7 +79,7 @@ def load_dataset(path, num_examples=None):
     return input_tensor, target_tensor, inp_lang_tokenizer, targ_lang_tokenizer
 
 
-num_examples = 100
+num_examples = 100000
 input_tensor, target_tensor, inp_lang, targ_lang = load_dataset(path_to_file, num_examples)
 
 # Calculate max_length of the target tensors
@@ -261,7 +261,7 @@ def train_step(inp, tar, hidden):
 
         return batch_loss
 
-EPOCHS = 2
+EPOCHS = 10
 #checkpoint_dir = './training_checkpoints'
 checkpoint_dir = "/content/drive/My Drive/Colab Notebooks/training_checkpoints"
 checkpoint_prefix = os.path.join(checkpoint_dir, "ckpt")
@@ -300,7 +300,7 @@ for (x, y) in dev_set:
     y = tf.expand_dims(y, 0)
     # hidden = [tf.zeros((1, units)), tf.zeros((1, units))]
     hidden = tf.zeros((1, units))
-    _, enc_hidden = encoder(x, hidden)
+    enc_output, enc_hidden = encoder(x, hidden)
     
     dec_hidden = enc_hidden
    
@@ -314,7 +314,7 @@ for (x, y) in dev_set:
     t = 1
     predicted_id = targ_lang.word_index['<start>']
     while(predicted_id != targ_lang.word_index['<end>'] and t < y.shape[1]):    
-        prediction, dec_hidden = decoder(dec_input, dec_hidden)
+        prediction, dec_hidden = decoder(dec_input, dec_hidden, enc_output)
 
         loss += loss_fn(y[0, t], prediction)
         
