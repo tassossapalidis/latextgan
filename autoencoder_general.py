@@ -3,22 +3,24 @@ import tensorflow as tf
 import matplotlib.ticker as ticker
 from sklearn.model_selection import train_test_split
 
+import argparse
 import unicodedata
 import re
 import os
 import io
+
+parser = parser = argparse.ArgumentParser()
+parser.add_argument("--train_data", type=str, help="path to train dataset, one sentence per line.")
+parser.add_argument("--dev_data", type=str, help="path to dev dataset, one sentence per line.")
+## might also need a max_length argument? Otherwise the dimensions of this model might not match
+## the dimensions needed for the future (encoder?)? Not sure why this would be the case because 
+## RNNs should be able to handle variable length input but
 
 ## for replication and model restoration
 np.random.seed(1234)
 
 # all preprocessing (and much of model) taken from https://www.tensorflow.org/tutorials/text/nmt_with_attention
 # but instead of translating english -> spanish, model just translates english -> english
-
-path_to_zip = tf.keras.utils.get_file(
-    'spa-eng.zip', origin='http://storage.googleapis.com/download.tensorflow.org/data/spa-eng.zip',
-    extract=True)
-
-path_to_file = os.path.dirname(path_to_zip)+"/spa-eng/spa.txt"
 
 def unicode_to_ascii(s):
     return ''.join(c for c in unicodedata.normalize('NFD', s)
@@ -44,49 +46,58 @@ def preprocess_sentence(w):
     return w
 
 # testing with using all training examples
-def create_dataset(path, num_examples):
-    lines = io.open(path, encoding='UTF-8').read().strip().split('\n')
+def create_dataset(path, num_examples, from_end = False):
+    with open(path) as f:
+        lines = f.read().splitlines()
+    for l in lines[:4]:
+      print(l)
 
-    #word_pairs = [[preprocess_sentence(w) for w in l.split('\t')]  for l in lines[:num_examples]]
-    
-    ## just english part
-    ## randomly sample num_examples from the dataset
-    lines = np.random.choice(lines, size=num_examples, replace=False)
-    word_pairs = [[preprocess_sentence(l.split('\t')[0]) for w in l.split('\t')] for l in lines]
-
-    return zip(*word_pairs)
+    ## input sentence == target sentence
+    ## this is just to make sure dev set is different from train set for now... 
+    ## once we actually split into train/dev/test sets we wont have to do this
+    if from_end:
+        processed_sentences = [preprocess_sentence(l) for l in lines[len(lines)-num_examples:]]
+    else:
+        processed_sentences = [preprocess_sentence(l) for l in lines[:num_examples]]
+    return processed_sentences
 
 
 def tokenize(lang):
-    lang_tokenizer = tf.keras.preprocessing.text.Tokenizer(
-      filters='')
+    ## changed num_words here to only have a 10,000 word vocab
+    ## I think words not known by tokenizer will just be skipped, which is probably undesirable
+    lang_tokenizer = tf.keras.preprocessing.text.Tokenizer(num_words = 10000, filters='')
     lang_tokenizer.fit_on_texts(lang)
-
     tensor = lang_tokenizer.texts_to_sequences(lang)
 
-    tensor = tf.keras.preprocessing.sequence.pad_sequences(tensor,
-                                                         padding='post')
+    ## pad ragged tensor with zeros
+    ## tensors longer than 'maxlen' will be truncated
+    tensor = tf.keras.preprocessing.sequence.pad_sequences(tensor, padding='post', truncating = 'post',
+                                                           maxlen = 50)
 
     return tensor, lang_tokenizer
 
-def load_dataset(path, num_examples=None):
-    # creating cleaned input, output pairs
-    targ_lang, inp_lang = create_dataset(path, num_examples)
+def load_dataset(path, num_examples = None):
+    # creating cleaned (input, output) pairs
+    lang = create_dataset(path, num_examples)
     
-    input_tensor, inp_lang_tokenizer = tokenize(inp_lang)
-    target_tensor, targ_lang_tokenizer = tokenize(targ_lang)
+    input_tensor, inp_lang_tokenizer = tokenize(lang)
+    target_tensor = input_tensor
 
-    return input_tensor, target_tensor, inp_lang_tokenizer, targ_lang_tokenizer
+    return input_tensor, target_tensor, inp_lang_tokenizer
 
 
-num_examples = 100000
-input_tensor, target_tensor, inp_lang, targ_lang = load_dataset(path_to_file, num_examples)
+args = parser.parse_args()
 
-# Calculate max_length of the target tensors
-max_length_targ, max_length_inp = target_tensor.shape[1], input_tensor.shape[1]
+input_tensor_train, target_tensor_train, tokenizer = load_dataset(args.train_data, 100000)
+dev = create_dataset(args.dev_data, 1000, from_end = True)
+input_tensor_dev = tokenizer.texts_to_sequences(dev)
+target_tensor_dev = input_tensor_dev
+input_tensor_dev = tf.keras.preprocessing.sequence.pad_sequences(input_tensor_dev, padding='post')
+target_tensor_dev = tf.keras.preprocessing.sequence.pad_sequences(target_tensor_dev, padding='post')
 
-input_tensor_train, input_tensor_val, target_tensor_train, target_tensor_val = train_test_split(input_tensor, target_tensor, test_size=0.05)
-print(len(input_tensor_train), len(target_tensor_train), len(input_tensor_val), len(target_tensor_val))
+# Calculate max_length of the tensors
+max_length = target_tensor_train.shape[1]
+
 
 BUFFER_SIZE = len(input_tensor_train)
 BATCH_SIZE = 64
@@ -94,54 +105,50 @@ steps_per_epoch = len(input_tensor_train)//BATCH_SIZE
 #embedding_dim = 128
 embedding_dim = 256
 #units = 1024
-units = 512
-vocab_inp_size = len(inp_lang.word_index)+1
-vocab_tar_size = len(targ_lang.word_index)+1
+#units = 512
+units = 256
 
 dataset = tf.data.Dataset.from_tensor_slices((input_tensor_train, target_tensor_train)).shuffle(BUFFER_SIZE)
 dataset = dataset.batch(BATCH_SIZE, drop_remainder=True)
 
+dev_set = tf.data.Dataset.from_tensor_slices((input_tensor_dev, target_tensor_dev))
+
 ## +1 for zero padding
-vocab_size = len(inp_lang.word_index)+1
+vocab_size = len(tokenizer.word_index)+1
 
 
 class Encoder(tf.keras.Model):
     def __init__(self, batch_size, vocab_size, embedding_dim, num_units):
         super(Encoder, self).__init__()
-        self.vs = vocab_size
         self.bs = batch_size
-        self.emb_dim = embedding_dim
         self.hidden_dim = num_units
 
         self.embedding = tf.keras.layers.Embedding(vocab_size, embedding_dim)
-        self.gru = tf.keras.layers.GRU(self.hidden_dim, 
+        '''self.gru = tf.keras.layers.GRU(self.hidden_dim, 
                                        return_sequences = True,
                                        return_state = True,
-                                       recurrent_initializer = 'glorot_uniform')
+                                       recurrent_initializer = 'glorot_uniform')'''
         # bidirectional worked better
-        # self.gru = tf.keras.layers.Bidirectional(tf.keras.layers.GRU(self.hidden_dim, 
-        #                                return_sequences = False,
-        #                                return_state = True,
-        #                                recurrent_initializer = 'glorot_uniform'))
+        self.gru = tf.keras.layers.Bidirectional(tf.keras.layers.GRU(self.hidden_dim, 
+                                        return_sequences = False,
+                                        return_state = True,
+                                        recurrent_initializer = 'glorot_uniform'))
         #self.lstm = tf.keras.layers.LSTM(units)
     def call(self, x, hidden):
         # x shape after embedding : (batch_size, seq_len, embedding_dim)
         x = self.embedding(x)
-        output, state = self.gru(x, initial_state = hidden)
-        #output, state_forward, state_backward = self.gru(x, initial_state = hidden)
-        #output = self.lstm(x)
-        # state shape: (batch_size, hidden_dim)
+        #output, state = self.gru(x, initial_state = hidden)
+        output, state_forward, state_backward = self.gru(x, initial_state = hidden)
 
-        #return state
-        #return output, tf.concat([state_forward, state_backward], axis = 1)
-        return output, state
+        return output, tf.concat([state_forward, state_backward], axis = 1)
+        #return output, state
 
     def initialize_hidden_state(self):
-        return tf.zeros((self.bs, self.hidden_dim))
-        #return [tf.zeros((self.bs, self.hidden_dim)), tf.zeros((self.bs, self.hidden_dim))]
+        #return tf.zeros((self.bs, self.hidden_dim))
+        return [tf.zeros((self.bs, self.hidden_dim)), tf.zeros((self.bs, self.hidden_dim))]
 
 # Define attention mechanism
-class BahdanauAttention(tf.keras.layers.Layer):
+'''class BahdanauAttention(tf.keras.layers.Layer):
   def __init__(self, units):
     super(BahdanauAttention, self).__init__()
     self.W1 = tf.keras.layers.Dense(units)
@@ -167,12 +174,11 @@ class BahdanauAttention(tf.keras.layers.Layer):
     context_vector = attention_weights * values
     context_vector = tf.reduce_sum(context_vector, axis=1)
 
-    return context_vector, attention_weights
+    return context_vector, attention_weights'''
 
 class Decoder(tf.keras.Model):
     def __init__(self, vocab_size, embedding_dim, num_units):
         super(Decoder, self).__init__()
-        self.vs = vocab_size
         self.emb_dim = embedding_dim
         self.hidden_dim = num_units
 
@@ -185,18 +191,13 @@ class Decoder(tf.keras.Model):
         self.ff = tf.keras.layers.Dense(vocab_size)
 
         # attention
-        self.attention = BahdanauAttention(self.hidden_dim)
+        #self.attention = BahdanauAttention(self.hidden_dim)
 
-    def call(self, x, hidden, enc_output):
-        
-        # enc_output shape == (batch_size, max_length, hidden_size)
-        context_vector, attention_weights = self.attention(hidden, enc_output)
+    #def call(self, x, hidden, enc_output):
+    def call(self, x, hidden):
 
         x = self.embedding(x)
         # output shape : (batch_size, 1, hidden_dim)
-
-        x = tf.concat([tf.expand_dims(context_vector, 1), x], axis=-1)
-        # output shape : (batch_size, 1, embedding_dim + hidden_size)
 
         output, state = self.gru(x, initial_state = hidden)
         #output, memory_state, carry_state = self.lstm(x, initial_state=hidden)
@@ -222,10 +223,10 @@ optimizer = tf.keras.optimizers.Adam()
 
 ## train model
 encoder = Encoder(BATCH_SIZE, vocab_size, embedding_dim, units)
-decoder = Decoder(vocab_size, embedding_dim, units)
+#decoder = Decoder(vocab_size, embedding_dim, units)
 
 # below is for bidirectional encoder
-# decoder = Decoder(vocab_size, embedding_dim, units*2)
+decoder = Decoder(vocab_size, embedding_dim, units*2)
 def train_step(inp, tar, hidden):
     loss = 0
 
@@ -236,12 +237,13 @@ def train_step(inp, tar, hidden):
     
         ## dec_input.shape == (batch_size, 1), since only one word is being
         ## used as input at each timestep
-        dec_input = tf.expand_dims([targ_lang.word_index['<start>']] * BATCH_SIZE, 1)
+        dec_input = tf.expand_dims([tokenizer.word_index['<start>']] * BATCH_SIZE, 1)
 
         #sentence = ''
         # teacher forcing
         for t in range(1, tar.shape[1]):
-            prediction, dec_hidden = decoder(dec_input, dec_hidden, enc_output)
+            #prediction, dec_hidden = decoder(dec_input, dec_hidden, enc_output)
+            prediction, dec_hidden = decoder(dec_input, dec_hidden)
 
             loss += loss_fn(tar[:, t], prediction)
             dec_input = tf.expand_dims(tar[:, t], 1)
@@ -262,8 +264,7 @@ def train_step(inp, tar, hidden):
         return batch_loss
 
 EPOCHS = 10
-#checkpoint_dir = './training_checkpoints'
-checkpoint_dir = "/content/drive/My Drive/Colab Notebooks/training_checkpoints"
+checkpoint_dir = "./training_checkpoints"
 checkpoint_prefix = os.path.join(checkpoint_dir, "ckpt")
 checkpoint = tf.train.Checkpoint(optimizer=optimizer,
                                  encoder=encoder,
@@ -289,32 +290,33 @@ for epoch in range(EPOCHS):
 def accuracy(prediction, label):
     return prediction == label
 
-checkpoint.restore(tf.train.latest_checkpoint(checkpoint_dir))
+#checkpoint.restore(tf.train.latest_checkpoint(checkpoint_dir))
 ## evaluate performance on dev set
-dev_set = tf.data.Dataset.from_tensor_slices((input_tensor_val, target_tensor_val))
 loss = 0
 acc = 0
 
 for (x, y) in dev_set:
     x = tf.expand_dims(x, 0)
     y = tf.expand_dims(y, 0)
-    # hidden = [tf.zeros((1, units)), tf.zeros((1, units))]
-    hidden = tf.zeros((1, units))
-    enc_output, enc_hidden = encoder(x, hidden)
-    
+    hidden = [tf.zeros((1, units)), tf.zeros((1, units))]
+    #hidden = tf.zeros((1, units))
+    #enc_hidden = encoder(x, hidden)
+    output, enc_hidden = encoder(x, hidden)
+
     dec_hidden = enc_hidden
    
     ## dec_input.shape == (batch_size, 1), since only one word is being
     ## used as input at each timestep
-    dec_input = tf.expand_dims([targ_lang.word_index['<start>']], 0)
+    dec_input = tf.expand_dims([tokenizer.word_index['<start>']], 0)
 
     sentence = ''
     # teacher forcing
     #for t in range(1, x.shape[1]):
     t = 1
-    predicted_id = targ_lang.word_index['<start>']
-    while(predicted_id != targ_lang.word_index['<end>'] and t < y.shape[1]):    
-        prediction, dec_hidden = decoder(dec_input, dec_hidden, enc_output)
+    predicted_id = tokenizer.word_index['<start>']
+    while(predicted_id != tokenizer.word_index['<end>'] and t < y.shape[1]):    
+        #prediction, dec_hidden = decoder(dec_input, dec_hidden, output)
+        prediction, dec_hidden = decoder(dec_input, dec_hidden)
 
         loss += loss_fn(y[0, t], prediction)
         
@@ -322,24 +324,24 @@ for (x, y) in dev_set:
         dec_input = tf.reshape(predicted_id, [1, 1])
 
         #if (tar[0, t].numpy() != 0) :       
-        sentence += targ_lang.index_word[predicted_id] + " " 
+        sentence += tokenizer.index_word[predicted_id] + " " 
 
         t += 1
     true_sentence = ''
     t = 1
 
-    word_ind = targ_lang.word_index['<start>']
-    while (word_ind != targ_lang.word_index['<end>']): 
+    word_ind = tokenizer.word_index['<start>']
+    while (word_ind != tokenizer.word_index['<end>']): 
         word_ind = y[0,t].numpy()
-        true_sentence += targ_lang.index_word[word_ind] + " "
+        true_sentence += tokenizer.index_word[word_ind] + " "
         t += 1
     acc += accuracy(sentence, true_sentence)
 
-acc /= len(target_tensor_val)
+acc /= len(target_tensor_dev)
 
 # put the loss on the same scale as batch_loss
 ## average loss per word
-loss /= (len(target_tensor_val)*int(y.shape[1]))
+loss /= (len(target_tensor_dev)*int(y.shape[1]))
 # this dev loss looks really high, but this really isn't a fair comparison
 # because the training uses teacher focing while during prediction, we 
 # cannot use teacher forcing. 
@@ -372,31 +374,33 @@ print("dev loss: {}".format(loss))'''
 # model doesn't do well with compound sentences.
 sentence = u'We went to class and then we went to the store.'
 sentence = preprocess_sentence(sentence)
-inputs = [inp_lang.word_index[i] for i in sentence.split(' ')]
+inputs = [tokenizer.word_index[i] for i in sentence.split(' ')]
 inputs = tf.keras.preprocessing.sequence.pad_sequences([inputs],
-                                                       maxlen=max_length_inp,
+                                                       #maxlen=max_length_inp,
+                                                       maxlen = 40,
                                                        padding='post')
 inputs = tf.convert_to_tensor(inputs)
 
 result = ''
 
-#hidden = [tf.zeros((1, units)), tf.zeros((1, units))]
-hidden = tf.zeros((1, units))
-enc_output, enc_hidden = encoder(inputs, hidden)
+hidden = [tf.zeros((1, units)), tf.zeros((1, units))]
+#hidden = tf.zeros((1, units))
+#enc_hidden = encoder(inputs, hidden)
+output, enc_hidden = encoder(inputs, hidden)
 
 dec_hidden = enc_hidden
-dec_input = tf.expand_dims([targ_lang.word_index['<start>']], 0)
+dec_input = tf.expand_dims([tokenizer.word_index['<start>']], 0)
 
 for t in range(40):
-    predictions, dec_hidden = decoder(dec_input,
-                                      dec_hidden,
-                                      enc_output)
+    #predictions, dec_hidden = decoder(dec_input,
+    #                                  dec_hidden, output)
+    prediction, dec_hidden = decoder(dec_input, dec_hidden)
+    
+    predicted_id = tf.argmax(prediction[0]).numpy()
 
-    predicted_id = tf.argmax(predictions[0]).numpy()
-
-    result += targ_lang.index_word[predicted_id] + ' '
+    result += tokenizer.index_word[predicted_id] + ' '
 
     dec_input = tf.expand_dims([predicted_id], 0)
-    if targ_lang.index_word[predicted_id] == '<end>':
+    if tokenizer.index_word[predicted_id] == '<end>':
         break
 print(result)
