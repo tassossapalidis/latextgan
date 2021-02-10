@@ -14,7 +14,10 @@ df = pd.read_csv('wiki_movie_plots_deduped.csv')
 df = df[['Plot']]
 #Don't match Initial. or Mr/Jr/.../"..." or Mrs/ie/eg AND 
 #   don't match future punctuation (i.e. the first two dots in an ellipsis)
-match_str = '(?<!\.)(?<![A-Z])(?<![Mr|Jr|Sr|Fr|Ms|Mz|Dr])(?<!Mrs|Rev|i\.e|e\.g)[\.](?!\.)'
+filter_words_2 = ['Mr', 'Jr', 'Sr', 'Fr', 'Ms', 'Mz', 'Dr', 'St', 'Rd']
+filter_words_3 = ['Mrs', 'Rev', 'i\.e', 'e\.g', 'Ave', 'Cir', 'Crt']
+match_str = """(?<!\.)(?<![A-Z])(?<!""" + '|'.join(filter_words_2)+""")(?<!""" +\
+    '|'.join(filter_words_3)+""")[\.](?!([a-z]?\.))"""
 min_sent = 5
 sents = df.Plot.str.replace(match_str,".<SPLIT>").tolist()
 sents = [re.sub("!","!<SPLIT>", x) for x in sents]
