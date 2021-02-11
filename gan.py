@@ -19,7 +19,7 @@ class ResNetBlock(keras.Model):
         return x
 
 class Generator(keras.Sequential):
-    def __init__(self, block_dim, n_layers):
+    def __init__(self, n_layers, block_dim):
         super(Generator, self).__init__()
 
         # simple sequence of ResNet blocks
@@ -33,6 +33,8 @@ class Discriminator(keras.Sequential):
         # simple sequence of ResNet blocks
         for i in range(n_layers):
             self.add(ResNetBlock(block_dim))
+        
+        self.add(keras.layers.Dense(1, activation='linear'))
 
 if __name__ == '__main__':
     # create a generator
