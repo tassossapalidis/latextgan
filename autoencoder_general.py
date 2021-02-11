@@ -209,15 +209,26 @@ def train_step(inp, tar, hidden, encoder, decoder, tokenizer, optimizer, batch_s
 
         return batch_loss
 
-def train_autoencoder(train_set, encoder, decoder, optimizer, tokenizer, num_epochs, batch_size, steps_per_epoch):
+def train_autoencoder(train_set, encoder, decoder, optimizer, tokenizer, num_epochs, batch_size, steps_per_epoch, restore_model):
     checkpoint_dir = "./training_checkpoints"
     checkpoint_prefix = os.path.join(checkpoint_dir, "ckpt")
     checkpoint = tf.train.Checkpoint(optimizer=optimizer,
                                     encoder=encoder,
                                     decoder=decoder)
-    #checkpoint.restore(tf.train.latest_checkpoint(checkpoint_dir))
+    
+    # model will be saved after this many epochs
+    save_freq = 2
+    # current epoch
+    curr_epoch = 0
+    if (restore_model and os.path.isdir(checkpoint_dir)):
+        latest_checkpoint = tf.train.latest_checkpoint(checkpoint_dir)
+        checkpoint.restore(latest_checkpoint)
+        
+        curr_epoch = int(latest_checkpoint.split('-')[-1]) * save_freq
+        curr_epoch = curr_epoch if curr_epoch <= num_epochs else num_epochs
+        print('Model restored from checkpoint at epoch {}.'.format(curr_epoch))
 
-    for epoch in range(num_epochs):
+    for epoch in range(curr_epoch, num_epochs):
         total_loss = 0
 
         hidden = encoder.initialize_hidden_state()
@@ -230,7 +241,7 @@ def train_autoencoder(train_set, encoder, decoder, optimizer, tokenizer, num_epo
                                                             batch,
                                                             batch_loss.numpy()))
         # saving (checkpoint) the model every 2 epochs
-        if (epoch + 1) % 2 == 0:
+        if (epoch + 1) % save_freq == 0:
             checkpoint.save(file_prefix = checkpoint_prefix)
     
     checkpoint.save(file_prefix = checkpoint_prefix)
@@ -323,7 +334,9 @@ def main(train_data, dev_data, test_sentence):
     target_tensor_dev = tf.keras.preprocessing.sequence.pad_sequences(target_tensor_dev, padding='post')
 
     ## define variables for training
-    # Number of epochs
+    # restore from checkpoint file?
+    restore_model = True
+    # number of epochs
     EPOCHS = 10
     # define batches
     BUFFER_SIZE = len(input_tensor_train)
@@ -353,7 +366,7 @@ def main(train_data, dev_data, test_sentence):
     decoder = Decoder(vocab_size, embedding_dim, units*2)
 
     ## train model
-    checkpoint = train_autoencoder(train_set, encoder, decoder, optimizer, tokenizer, EPOCHS, BATCH_SIZE, steps_per_epoch)
+    checkpoint = train_autoencoder(train_set, encoder, decoder, optimizer, tokenizer, EPOCHS, BATCH_SIZE, steps_per_epoch, restore_model)
 
     #checkpoint.restore(tf.train.latest_checkpoint(checkpoint_dir))
 
