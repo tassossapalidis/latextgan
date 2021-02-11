@@ -206,7 +206,8 @@ def train_step(inp, tar, hidden, encoder, decoder, tokenizer, optimizer, batch_s
 
         return batch_loss
 
-def train_autoencoder(train_set, encoder, decoder, optimizer, tokenizer, num_epochs, batch_size, steps_per_epoch, restore_model):
+def train_autoencoder(train_set, encoder, decoder, optimizer, tokenizer, num_epochs, batch_size, steps_per_epoch, 
+                      dev_set, num_dev_examples, restore_model):
     checkpoint_dir = "./training_checkpoints"
     checkpoint_prefix = os.path.join(checkpoint_dir, "ckpt")
     checkpoint = tf.train.Checkpoint(optimizer=optimizer,
@@ -367,7 +368,7 @@ def main(train_data, dev_data, test_sentence):
     decoder = Decoder(vocab_size, embedding_dim, units*2)
 
     ## train model
-    checkpoint = train_autoencoder(train_set, encoder, decoder, optimizer, tokenizer, EPOCHS, BATCH_SIZE, steps_per_epoch, restore_model)
+    checkpoint = train_autoencoder(train_set, encoder, decoder, optimizer, tokenizer, EPOCHS, BATCH_SIZE, steps_per_epoch, dev_set, num_dev_examples, restore_model)
 
     #checkpoint.restore(tf.train.latest_checkpoint(checkpoint_dir))
 
