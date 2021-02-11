@@ -36,17 +36,14 @@ def preprocess_sentence(w):
     return w
 
 # testing with using all training examples
-def create_dataset(path, num_examples, from_end = False):
+def create_dataset(path, num_examples):
     with open(path) as f:
         lines = f.read().splitlines()
 
     ## input sentence == target sentence
     ## this is just to make sure dev set is different from train set for now... 
     ## once we actually split into train/dev/test sets we wont have to do this
-    if from_end:
-        processed_sentences = [preprocess_sentence(l) for l in lines[len(lines)-num_examples:]]
-    else:
-        processed_sentences = [preprocess_sentence(l) for l in lines[:num_examples]]
+    processed_sentences = [preprocess_sentence(l) for l in lines[:num_examples]]
     return processed_sentences
 
 
@@ -209,7 +206,7 @@ def train_step(inp, tar, hidden, encoder, decoder, tokenizer, optimizer, batch_s
 
         return batch_loss
 
-def train_autoencoder(train_set, encoder, decoder, optimizer, tokenizer, num_epochs, batch_size, steps_per_epoch):
+def train_autoencoder(train_set, dev_set, encoder, decoder, optimizer, tokenizer, num_epochs, batch_size, steps_per_epoch, num_dev_examples):
     checkpoint_dir = "./training_checkpoints"
     checkpoint_prefix = os.path.join(checkpoint_dir, "ckpt")
     checkpoint = tf.train.Checkpoint(optimizer=optimizer,
@@ -232,6 +229,9 @@ def train_autoencoder(train_set, encoder, decoder, optimizer, tokenizer, num_epo
         # saving (checkpoint) the model every 2 epochs
         if (epoch + 1) % 2 == 0:
             checkpoint.save(file_prefix = checkpoint_prefix)
+
+        if (epoch + 1) % 5 == 0:
+            test_dev(encoder, decoder, tokenizer, dev_set, num_dev_examples)
     
     checkpoint.save(file_prefix = checkpoint_prefix)
     return checkpoint
@@ -303,20 +303,21 @@ def test_dev(encoder, decoder, tokenizer, dev_set, num_dev_examples):
 
 def main(train_data, dev_data, test_sentence):
     ## for replication and model restoration
-    np.random.seed(1234)
+    #np.random.seed(1234)
 
     ## define variables for preprocessing
     # maximum length of sentences
-    max_sentence_len = 50
+    max_sentence_len = 100
     # maximum number of words in vocabulary
     max_vocab = 10000
     # number of examples (sentences) to use
-    num_train_examples = 100
-    num_dev_examples = 100
+    #num_train_examples = 200000
+    num_train_examples = 100000
+    num_dev_examples = 2000
 
     ## create datasets
     input_tensor_train, target_tensor_train, tokenizer = load_dataset(train_data, max_sentence_len, max_vocab, num_train_examples)
-    dev = create_dataset(dev_data, num_dev_examples, from_end = True)
+    dev = create_dataset(dev_data, num_dev_examples)
     input_tensor_dev = tokenizer.texts_to_sequences(dev)
     target_tensor_dev = input_tensor_dev
     input_tensor_dev = tf.keras.preprocessing.sequence.pad_sequences(input_tensor_dev, padding='post')
@@ -324,7 +325,7 @@ def main(train_data, dev_data, test_sentence):
 
     ## define variables for training
     # Number of epochs
-    EPOCHS = 10
+    EPOCHS = 12
     # define batches
     BUFFER_SIZE = len(input_tensor_train)
     BATCH_SIZE = 64
@@ -353,7 +354,7 @@ def main(train_data, dev_data, test_sentence):
     decoder = Decoder(vocab_size, embedding_dim, units*2)
 
     ## train model
-    checkpoint = train_autoencoder(train_set, encoder, decoder, optimizer, tokenizer, EPOCHS, BATCH_SIZE, steps_per_epoch)
+    checkpoint = train_autoencoder(train_set, dev_set, encoder, decoder, optimizer, tokenizer, EPOCHS, BATCH_SIZE, steps_per_epoch, num_dev_examples)
 
     #checkpoint.restore(tf.train.latest_checkpoint(checkpoint_dir))
 
@@ -363,10 +364,11 @@ def main(train_data, dev_data, test_sentence):
     # model doesn't do well with compound sentences.
     sentence = test_sentence
     sentence = preprocess_sentence(sentence)
-    inputs = [tokenizer.word_index[i] for i in sentence.split(' ')]
+    #inputs = [tokenizer.word_index[i] for i in sentence.split(' ')]
+    inputs = tokenizer.texts_to_sequences([sentence])[0]
     inputs = tf.keras.preprocessing.sequence.pad_sequences([inputs],
                                                         #maxlen=max_length_inp,
-                                                        maxlen = 40,
+                                                        maxlen = 50,
                                                         padding='post')
     inputs = tf.convert_to_tensor(inputs)
 
@@ -380,7 +382,7 @@ def main(train_data, dev_data, test_sentence):
     dec_hidden = enc_hidden
     dec_input = tf.expand_dims([tokenizer.word_index['<start>']], 0)
 
-    for t in range(40):
+    for t in range(50):
         #predictions, dec_hidden = decoder(dec_input,
         #                                  dec_hidden, output)
         prediction, dec_hidden = decoder(dec_input, dec_hidden)
