@@ -1,0 +1,34 @@
+{   
+    "data_parameters": {
+        "max_sentence_length": 25,
+        "max_vocab": 20000,
+        "num_train_examples": 100,
+        "num_dev_examples": 2
+    },
+    "training_parameters": {
+        "epochs": 4,
+        "batch_size": 64,
+        "test_dev_frequency": 1,
+        "initializer": "glorot_uniform",
+        "dropout": 0.4,
+        "recurrent_dropout": 0.2,
+        "optimizer": "tf.keras.optimizers.Adam()",
+        "loss_function": "tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True, reduction='none')"
+    },
+    "architecture_parameters": {
+        "embedding_dimension": 128,
+        "units": 512,
+        "encoder_gru_layers": 1,
+        "decoder_gru_layers": 1
+    },
+    "model_save_parameters": {
+        "checkpoint_directory": "./checkpoints",
+        "save_frequency": 2,
+        "max_to_keep": 2,
+        "restore_model": true
+    },
+    "test_sentences": [
+        "I love Bitcoin.",
+        "what is taxable then in your opinion?"
+    ]
+}
