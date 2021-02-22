@@ -332,7 +332,7 @@ def eval_accuracy(encoder, decoder, tokenizer, dev_set):
 
     return acc
     
-def evaluate_sentences(tokenizer = None):
+def evaluate_sentences(train_data, tokenizer = None):
     if tokenizer == None:
         _, _, tokenizer = load_dataset(train_data, data_parameters['num_train_examples'])
     vocab_size = len(tokenizer.word_index)+1
@@ -425,7 +425,7 @@ def main(train_data, dev_data):
     ## train model
     checkpoint = train_autoencoder(train_set, encoder, decoder, tokenizer, steps_per_epoch, dev_batch, num_dev_examples)
     
-    evaluate_sentences(tokenizer)
+    evaluate_sentences(train_data, tokenizer)
 
     return checkpoint
 
