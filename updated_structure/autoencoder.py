@@ -53,7 +53,8 @@ def create_dataset(path, num_examples):
     ## input sentence == target sentence
     ## this is just to make sure dev set is different from train set for now... 
     ## once we actually split into train/dev/test sets we wont have to do this
-    processed_sentences = [preprocess_sentence(l) for l in lines[:num_examples] if len(l.split(' '))<=max_sentence_len]
+    pre_processed_sentences = [l for l in lines if len(l.split(' '))<= max_sentence_len]
+    processed_sentences = [preprocess_sentence(l) for l in pre_processed_sentences[:num_examples]]
     return processed_sentences
 
 
