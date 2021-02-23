@@ -55,7 +55,7 @@ target_tensor_dev = tf.keras.preprocessing.sequence.pad_sequences(target_tensor_
 '''
 ## define variables for training
 # Number of epochs
-EPOCHS = 20
+EPOCHS = 100
 # restore from checkpoint file?
 restore_model = True
 # define batches
@@ -66,7 +66,8 @@ steps_per_epoch = len(input_tensor_train)//BATCH_SIZE
 embedding_dim = 128
 #units = 256
 units = 512
-n_generator_train = 3
+# n train == 3: model deteriorates to only outputting a single sentence
+n_generator_train = 5
 # Calculate max_length of the tensors
 max_length = target_tensor_train.shape[1]
 # calculate vocab size (+1 for zero padding)
@@ -75,7 +76,9 @@ vocab_size = len(tokenizer.word_index)+1
 #num_dev_examples = len(target_tensor_dev)
 # define optimizer (Adam)
 ae_optimizer = tf.keras.optimizers.Adam()
-optimizer = tf.keras.optimizers.Adam(learning_rate = 0.00001)
+# before: lr of 0.0005
+# hparams from 'improved training of wgans'
+optimizer = tf.keras.optimizers.Adam(learning_rate = 0.0001, beta_1 = 0.5, beta_2 = 0.9)
 
 ## create datasets
 train_set = tf.data.Dataset.from_tensor_slices((input_tensor_train, target_tensor_train)).shuffle(BUFFER_SIZE)
@@ -88,8 +91,8 @@ train_set = train_set.batch(BATCH_SIZE, drop_remainder=True)
 encoder = Encoder(BATCH_SIZE, vocab_size, embedding_dim, units, 1)
 #decoder = Decoder(vocab_size, embedding_dim, units*2, 1)
 decoder = Decoder(vocab_size, embedding_dim, units*2, 1)
-generator = Generator(4, units*2)
-discriminator = Discriminator(4, units*2)
+generator = Generator(5, units*2)
+discriminator = Discriminator(5, units*2)
 
 
 checkpoint_dir = "./training_ckpt_2"
@@ -101,7 +104,6 @@ print(tf.train.latest_checkpoint(checkpoint_dir))
 checkpoint.restore(tf.train.latest_checkpoint(checkpoint_dir))
 
 # real_data shape == fake_data shape (batch_size, units)
-# TODO: check these shapes and this formula
 def grad_penalty(real_data, fake_data):
     alpha = tf.random.uniform(shape = (BATCH_SIZE, 1), minval = 0, maxval = 1)
     vect = alpha*real_data + (1-alpha)*fake_data
@@ -111,19 +113,22 @@ def grad_penalty(real_data, fake_data):
         prediction = discriminator(vect)
     # gradients shape: (batch_size, num_variables) ?
     gradients = tape.gradient(prediction, vect)
-    grad_norm = tf.linalg.norm(gradients, axis = 1)
-    return tf.math.reduce_mean((grad_norm - 1)**2)
+    #grad_norm = tf.linalg.norm(gradients, axis = 1)
+    #return tf.math.reduce_mean((grad_norm - 1)**2)
+    slopes = tf.sqrt(tf.reduce_sum(tf.square(gradients), axis=1))
+    gradient_penalty = tf.reduce_mean((slopes-1.)**2)
+    return gradient_penalty
 
 def discriminator_loss(real_pred, fake_pred):
     ## Wasserstein loss -- no log here
-    #return -tf.math.reduce_mean(real_pred) + tf.math.reduce_mean(fake_pred)
+    return -tf.math.reduce_mean(real_pred) + tf.math.reduce_mean(fake_pred)
     #print("fake: {}".format(fake_pred))
-    return -tf.math.reduce_mean(tf.math.log(real_pred)) - tf.math.reduce_mean(tf.math.log(1-fake_pred))
+    #return -tf.math.reduce_mean(tf.math.log(real_pred)) - tf.math.reduce_mean(tf.math.log(1-fake_pred))
 
 def generator_loss(fake_pred):
-    #return -tf.math.reduce_mean(fake_pred)
+    return -tf.math.reduce_mean(fake_pred)
     #print(fake_pred)
-    return -tf.math.reduce_mean(tf.math.log(fake_pred))
+    #return -tf.math.reduce_mean(tf.math.log(fake_pred))
 
 def train_step_disc(real_data_batch):
     disc_loss = 0
@@ -141,6 +146,7 @@ def train_step_disc(real_data_batch):
         #print("fake: {}".format(fake_vects))
         fake_predictions = discriminator(fake_vects)
         disc_loss = discriminator_loss(real_predictions, fake_predictions)
+        # 10 has worked best so far here
         disc_loss += 10*grad_penalty(real_vects, fake_vects)
     variables = discriminator.trainable_variables
     gradients = tape.gradient(disc_loss, variables)
@@ -174,8 +180,10 @@ def main():
         gen_loss = 0
         for (i, (x, y)) in enumerate(train_set.take(100)):
             disc_loss += train_step_disc(x)
-            '''if (i % n_generator_train) == 0:
-                gen_loss += train_step_gen()'''
+            # i think this is the way its implemented in the wgan paper
+            # training generator every n batches rather than every n epochs
+            if (i % n_generator_train) == 0:
+                gen_loss += train_step_gen()
         disc_loss /= (i+1) 
         gen_loss /= (np.floor((i+1)/n_generator_train))
         print(disc_loss)
@@ -183,7 +191,7 @@ def main():
         print(gen_loss)
         gen_losses.append(gen_loss)
 
-        if (epoch % n_generator_train) == 0:
+        '''if (epoch % n_generator_train) == 0:
             gen_loss = 0
 
             # change this. don't actually need data but just want to make sure
@@ -194,13 +202,12 @@ def main():
                 #print("gen loss: {}".format(gen_loss))
             gen_loss /= (i+1)
             print("gen loss: {}".format(gen_loss))
-            gen_losses.append(gen_loss)
+            gen_losses.append(gen_loss)'''
 
         decode_sentence(decoder, generator(tf.random.normal((1, units*2))), tokenizer)
     
     plt.plot(range(100), disc_losses)
-    plt.plot(range(100), gen_losses)
-    #plt.plot(range(0, 20, 3), gen_losses)
+    plt.plot(range(0, 100), gen_losses)
 
     plt.show()
 

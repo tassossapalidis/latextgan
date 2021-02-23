@@ -61,7 +61,7 @@ def tokenize(lang, max_sentence_len, max_vocab):
     ## pad ragged tensor with zeros
     ## tensors longer than 'maxlen' will be truncated
     tensor = tf.keras.preprocessing.sequence.pad_sequences(tensor, padding='post', truncating = 'post',
-                                                           maxlen = max_sentence_len)
+                                                           maxlen = max_sentence_len, value=0)
 
     return tensor, lang_tokenizer
 
@@ -75,10 +75,11 @@ def load_dataset(path, max_sentence_len, max_vocab, num_examples = None):
     return input_tensor, target_tensor, inp_lang_tokenizer
 
 class Encoder(tf.keras.Model):
-    def __init__(self, batch_size, vocab_size, embedding_dim, num_units):
+    def __init__(self, batch_size, vocab_size, embedding_dim, num_units, num_layers):
         super(Encoder, self).__init__()
         self.bs = batch_size
         self.hidden_dim = num_units
+        self.num_layers = num_layers
 
         self.embedding = tf.keras.layers.Embedding(vocab_size, embedding_dim)
         '''self.gru = tf.keras.layers.GRU(self.hidden_dim, 
@@ -86,17 +87,38 @@ class Encoder(tf.keras.Model):
                                        return_state = True,
                                        recurrent_initializer = 'glorot_uniform')'''
         # bidirectional worked better
-        self.gru = tf.keras.layers.Bidirectional(tf.keras.layers.GRU(self.hidden_dim, 
+        '''self.gru = tf.keras.layers.Bidirectional(tf.keras.layers.GRU(self.hidden_dim, 
                                         return_sequences = False,
                                         return_state = True,
+                                        recurrent_initializer = 'glorot_uniform'))'''
+        self.grus = [tf.keras.layers.Bidirectional(tf.keras.layers.GRU(self.hidden_dim, 
+                                        return_sequences = True,
+                                        return_state = True,
                                         recurrent_initializer = 'glorot_uniform'))
+                for _ in range(num_layers)]
+        '''self.grus = [tf.keras.layers.GRU(self.hidden_dim, 
+                                        return_sequences = True,
+                                        return_state = True,
+                                        recurrent_initializer = 'glorot_uniform')
+                for _ in range(num_layers)]'''
         #self.lstm = tf.keras.layers.LSTM(units)
     def call(self, x, hidden):
         # x shape after embedding : (batch_size, seq_len, embedding_dim)
+        print(x.shape)
         x = self.embedding(x)
-        #output, state = self.gru(x, initial_state = hidden)
-        output, state_forward, state_backward = self.gru(x, initial_state = hidden)
+        #output, state_forward, state_backward = self.gru(x, initial_state = hidden)
+        hidden_forward = hidden[0]
+        hidden_backward = hidden[1]
 
+        for i in range(self.num_layers):
+          x, state_forward, state_backward = self.grus[i](x)
+          #x, state = self.grus[i](x)
+          
+        
+
+        # get the last hidden state
+        output = x[:, -1, :]
+        #output = tf.reduce_sum(x, 1)
         return output, tf.concat([state_forward, state_backward], axis = 1)
         #return output, state
 
@@ -134,17 +156,23 @@ class Encoder(tf.keras.Model):
     return context_vector, attention_weights'''
 
 class Decoder(tf.keras.Model):
-    def __init__(self, vocab_size, embedding_dim, num_units):
+    def __init__(self, vocab_size, embedding_dim, num_units, num_layers):
         super(Decoder, self).__init__()
         self.emb_dim = embedding_dim
         self.hidden_dim = num_units
+        self.num_layers = num_layers
 
         self.embedding = tf.keras.layers.Embedding(vocab_size, embedding_dim)
-        self.gru = tf.keras.layers.GRU(self.hidden_dim,
+        '''self.gru = tf.keras.layers.GRU(self.hidden_dim,
                                        return_sequences = False,
                                        return_state = True,
+                                       recurrent_initializer = 'glorot_uniform')'''
+        self.grus = [tf.keras.layers.GRU(self.hidden_dim,
+                                       return_sequences = True,
+                                       return_state = True,
                                        recurrent_initializer = 'glorot_uniform')
-        #self.lstm = tf.keras.layers.LSTM(units, return_state=True)                               
+                    for _ in range(num_layers)]                             
+        # self.lstm = tf.keras.layers.LSTM(units, return_state=True)                               
         self.ff = tf.keras.layers.Dense(vocab_size)
 
         # attention
@@ -156,12 +184,16 @@ class Decoder(tf.keras.Model):
         x = self.embedding(x)
         # output shape : (batch_size, 1, hidden_dim)
 
-        output, state = self.gru(x, initial_state = hidden)
-        #output, memory_state, carry_state = self.lstm(x, initial_state=hidden)
-
+        # output, state = self.gru(x, initial_state = hidden)
+        x, _ = self.grus[0](x, hidden)
+        for i in range(1, self.num_layers):
+          x, hidden = self.grus[i](x, hidden)
+        
+        output = tf.squeeze(x, 1)
         output = self.ff(output)
-        #return output, [memory_state, carry_state]
-        return output, state
+        
+        #return output, state
+        return output, hidden
 
 def loss_fn(real, pred):
     ## padding mask
@@ -211,8 +243,10 @@ def train_step(inp, tar, hidden, encoder, decoder, tokenizer, optimizer, batch_s
         return batch_loss
 
 def train_autoencoder(train_set, encoder, decoder, optimizer, tokenizer, num_epochs, batch_size, steps_per_epoch, 
-                      dev_set, num_dev_examples, restore_model):
-    checkpoint_dir = "./training_checkpoints"
+                      dev_set, num_dev_examples, restore_model=True):
+    #checkpoint_dir = "./training_checkpoints"
+    #checkpoint_dir = "/content/drive/MyDrive/CS230project/training_chekpoints"
+    checkpoint_dir = "./training_ckpt_2"
     checkpoint_prefix = os.path.join(checkpoint_dir, "ckpt")
     checkpoint = tf.train.Checkpoint(optimizer=optimizer,
                                     encoder=encoder,
@@ -224,6 +258,7 @@ def train_autoencoder(train_set, encoder, decoder, optimizer, tokenizer, num_epo
     curr_epoch = 0
     if (restore_model and os.path.isdir(checkpoint_dir)):
         latest_checkpoint = tf.train.latest_checkpoint(checkpoint_dir)
+        print(latest_checkpoint)
         checkpoint.restore(latest_checkpoint)
         
         curr_epoch = int(latest_checkpoint.split('-')[-1]) * save_freq
@@ -249,7 +284,7 @@ def train_autoencoder(train_set, encoder, decoder, optimizer, tokenizer, num_epo
         if (epoch + 1) % 5 == 0:
             test_dev(encoder, decoder, tokenizer, dev_set, num_dev_examples)
     
-    checkpoint.save(file_prefix = checkpoint_prefix)
+    #checkpoint.save(file_prefix = checkpoint_prefix)
     return checkpoint
 
 def accuracy(prediction, label):
@@ -257,7 +292,36 @@ def accuracy(prediction, label):
 
 def test_dev(encoder, decoder, tokenizer, dev_set, num_dev_examples):
 
-    loss = 0
+    for (inp, tar) in dev_set.take(1):
+      print(inp.shape)
+
+      loss = 0
+
+      hidden = [tf.zeros((num_dev_examples, encoder.hidden_dim)), tf.zeros((num_dev_examples, encoder.hidden_dim))]
+      enc_output, enc_hidden = encoder(inp, hidden)
+
+      dec_hidden = enc_hidden
+    
+      ## dec_input.shape == (batch_size, 1), since only one word is being
+      ## used as input at each timestep
+      dec_input = tf.expand_dims([tokenizer.word_index['<start>']] * num_dev_examples, 1)
+
+      # teacher forcing
+      for t in range(1, tar.shape[1]):
+          #prediction, dec_hidden = decoder(dec_input, dec_hidden, enc_output)
+          prediction, dec_hidden = decoder(dec_input, dec_hidden)
+
+          loss += loss_fn(tar[:, t], prediction)
+          dec_input = tf.expand_dims(tar[:, t], 1)
+
+      # average loss over sequence length
+      batch_loss = loss/int(tar.shape[1])
+
+      print("dev loss: {}".format(batch_loss))
+
+      return batch_loss
+
+    '''loss = 0
     acc = 0
 
     units = encoder.hidden_dim
@@ -315,7 +379,58 @@ def test_dev(encoder, decoder, tokenizer, dev_set, num_dev_examples):
     print("dev loss: {}".format(loss))
     print("dev accuracy: {}".format(acc))
 
-    return loss, acc
+    return loss, acc'''
+
+def eval_accuracy(encoder, decoder, tokenizer, dev_set, num_dev_examples):
+
+    acc = 0
+
+    units = encoder.hidden_dim
+
+    for (x, y) in dev_set:
+        x = tf.expand_dims(x, 0)
+        y = tf.expand_dims(y, 0)
+        hidden = [tf.zeros((1, units)), tf.zeros((1, units))]
+        #hidden = tf.zeros((1, units))
+        #enc_hidden = encoder(x, hidden)
+        output, enc_hidden = encoder(x, hidden)
+
+        dec_hidden = enc_hidden
+    
+        ## dec_input.shape == (batch_size, 1), since only one word is being
+        ## used as input at each timestep
+        dec_input = tf.expand_dims([tokenizer.word_index['<start>']], 0)
+
+        sentence = ''
+        # teacher forcing
+        #for t in range(1, x.shape[1]):
+        t = 1
+        predicted_id = tokenizer.word_index['<start>']
+        while(t < y.shape[1] and predicted_id != tokenizer.word_index['<end>']):    
+            #prediction, dec_hidden = decoder(dec_input, dec_hidden, output)
+            prediction, dec_hidden = decoder(dec_input, dec_hidden)
+            
+            predicted_id = tf.argmax(prediction[0]).numpy()
+            dec_input = tf.reshape(predicted_id, [1, 1])
+      
+            sentence += tokenizer.index_word[predicted_id] + " " 
+
+            t += 1
+        true_sentence = ''
+        t = 1
+
+        word_ind = tokenizer.word_index['<start>']
+
+        while (t < y.shape[1] and word_ind != tokenizer.word_index['<end>']): 
+            word_ind = y[0,t].numpy()
+            true_sentence += tokenizer.index_word[word_ind] + " "
+            t += 1
+        acc += accuracy(sentence, true_sentence)
+
+    acc /= num_dev_examples
+    print("dev accuracy: {}".format(acc))
+
+    return acc
 
 def main(train_data, dev_data, test_sentence):
     ## for replication and model restoration
@@ -325,19 +440,21 @@ def main(train_data, dev_data, test_sentence):
     # maximum length of sentences
     max_sentence_len = 30
     # maximum number of words in vocabulary
-    max_vocab = 10000
+    max_vocab = 20000
     # number of examples (sentences) to use
     #num_train_examples = 200000
-    num_train_examples = 100000
-    num_dev_examples = 2000
+    num_train_examples = 1500
+    num_dev_examples = 200
 
     ## create datasets
     input_tensor_train, target_tensor_train, tokenizer = load_dataset(train_data, max_sentence_len, max_vocab, num_train_examples)
     dev = create_dataset(dev_data, num_dev_examples, max_sentence_len)
     input_tensor_dev = tokenizer.texts_to_sequences(dev)
     target_tensor_dev = input_tensor_dev
-    input_tensor_dev = tf.keras.preprocessing.sequence.pad_sequences(input_tensor_dev, padding='post')
-    target_tensor_dev = tf.keras.preprocessing.sequence.pad_sequences(target_tensor_dev, padding='post')
+    input_tensor_dev = tf.keras.preprocessing.sequence.pad_sequences(input_tensor_dev, padding='post',
+                                                            truncating = 'post', maxlen = max_sentence_len, value=0)
+    target_tensor_dev = tf.keras.preprocessing.sequence.pad_sequences(target_tensor_dev, padding='post',
+                                                            truncating = 'post', maxlen = max_sentence_len, value=0)
 
     ## define variables for training
     # Number of epochs
@@ -349,8 +466,9 @@ def main(train_data, dev_data, test_sentence):
     BATCH_SIZE = 64
     steps_per_epoch = len(input_tensor_train)//BATCH_SIZE
     # define autoencoder architecture
-    embedding_dim = 256
-    units = 256
+    embedding_dim = 128
+    #units = 256
+    units = 512
     # Calculate max_length of the tensors
     max_length = target_tensor_train.shape[1]
     # calculate vocab size (+1 for zero padding)
@@ -366,18 +484,22 @@ def main(train_data, dev_data, test_sentence):
     train_set = train_set.batch(BATCH_SIZE, drop_remainder=True)
 
     dev_set = tf.data.Dataset.from_tensor_slices((input_tensor_dev, target_tensor_dev))
+    dev_batch = dev_set.batch(num_dev_examples)
 
     ## construct model
-    encoder = Encoder(BATCH_SIZE, vocab_size, embedding_dim, units)
-    decoder = Decoder(vocab_size, embedding_dim, units*2)
+    encoder = Encoder(BATCH_SIZE, vocab_size, embedding_dim, units, 1)
+    #decoder = Decoder(vocab_size, embedding_dim, units*2, 2)
+    decoder = Decoder(vocab_size, embedding_dim, units*2, 1)
 
     ## train model
-    checkpoint = train_autoencoder(train_set, encoder, decoder, optimizer, tokenizer, EPOCHS, BATCH_SIZE, steps_per_epoch, dev_set, num_dev_examples, restore_model)
+    checkpoint = train_autoencoder(train_set, encoder, decoder, optimizer, tokenizer, EPOCHS, BATCH_SIZE, 
+                                   steps_per_epoch, dev_batch, num_dev_examples, restore_model)
 
     #checkpoint.restore(tf.train.latest_checkpoint(checkpoint_dir))
 
     ## evaluate performance on dev set
-    test_dev(encoder, decoder, tokenizer, dev_set, num_dev_examples)
+    #test_dev(encoder, decoder, tokenizer, dev_batch, num_dev_examples)
+    #eval_accuracy(encoder, decoder, tokenizer, dev_set, num_dev_examples)
         
     # model doesn't do well with compound sentences.
     sentence = test_sentence
@@ -386,7 +508,7 @@ def main(train_data, dev_data, test_sentence):
     inputs = tokenizer.texts_to_sequences([sentence])[0]
     inputs = tf.keras.preprocessing.sequence.pad_sequences([inputs],
                                                         #maxlen=max_length_inp,
-                                                        maxlen = 50,
+                                                        maxlen = 40,
                                                         padding='post')
     inputs = tf.convert_to_tensor(inputs)
 
@@ -428,7 +550,7 @@ if __name__ == '__main__':
     train_data = args.train_data
     dev_data = args.dev_data
 
-    test_sentence = "The air is cold."
+    test_sentence = "The air is cold in the winter."
 
     main(train_data, dev_data, test_sentence)
 
