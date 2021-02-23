@@ -25,8 +25,12 @@ def preprocess_sentence(w):
     w = re.sub(r"([?.!,])", r" \1 ", w)
     w = re.sub(r'[" "]+', " ", w)
 
-    # replacing everything with space except (a-z, A-Z, ".", "?", "!", ",")
+    # remove everything except (a-z, A-Z, ".", "?", "!", ",", " ")
+    #w = re.sub(r"[^a-zA-Z?.!,\s]+", "", w)
+    
+    # replace everything with space except (a-z, A-Z, ".", "?", "!", ",")
     w = re.sub(r"[^a-zA-Z?.!,]+", " ", w)
+    
 
     w = w.strip()
 
@@ -36,14 +40,14 @@ def preprocess_sentence(w):
     return w
 
 # testing with using all training examples
-def create_dataset(path, num_examples):
-    with open(path) as f:
+def create_dataset(path, num_examples, max_sentence_len):
+    with open(path, encoding = "utf-8") as f:
         lines = f.read().splitlines()
 
     ## input sentence == target sentence
     ## this is just to make sure dev set is different from train set for now... 
     ## once we actually split into train/dev/test sets we wont have to do this
-    processed_sentences = [preprocess_sentence(l) for l in lines[:num_examples]]
+    processed_sentences = [preprocess_sentence(l) for l in lines[:num_examples] if len(l.split(' '))<=max_sentence_len]
     return processed_sentences
 
 
@@ -63,7 +67,7 @@ def tokenize(lang, max_sentence_len, max_vocab):
 
 def load_dataset(path, max_sentence_len, max_vocab, num_examples = None):
     # creating cleaned (input, output) pairs
-    lang = create_dataset(path, num_examples)
+    lang = create_dataset(path, num_examples, max_sentence_len)
     
     input_tensor, inp_lang_tokenizer = tokenize(lang, max_sentence_len, max_vocab)
     target_tensor = input_tensor
@@ -319,7 +323,7 @@ def main(train_data, dev_data, test_sentence):
 
     ## define variables for preprocessing
     # maximum length of sentences
-    max_sentence_len = 100
+    max_sentence_len = 30
     # maximum number of words in vocabulary
     max_vocab = 10000
     # number of examples (sentences) to use
@@ -329,7 +333,7 @@ def main(train_data, dev_data, test_sentence):
 
     ## create datasets
     input_tensor_train, target_tensor_train, tokenizer = load_dataset(train_data, max_sentence_len, max_vocab, num_train_examples)
-    dev = create_dataset(dev_data, num_dev_examples)
+    dev = create_dataset(dev_data, num_dev_examples, max_sentence_len)
     input_tensor_dev = tokenizer.texts_to_sequences(dev)
     target_tensor_dev = input_tensor_dev
     input_tensor_dev = tf.keras.preprocessing.sequence.pad_sequences(input_tensor_dev, padding='post')
