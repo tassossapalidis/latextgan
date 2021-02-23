@@ -46,13 +46,14 @@ def preprocess_sentence(w):
 
 # testing with using all training examples
 def create_dataset(path, num_examples):
+    max_sentence_len = data_parameters['max_sentence_length']
     with open(path) as f:
         lines = f.read().splitlines()
 
     ## input sentence == target sentence
     ## this is just to make sure dev set is different from train set for now... 
     ## once we actually split into train/dev/test sets we wont have to do this
-    processed_sentences = [preprocess_sentence(l) for l in lines[:num_examples]]
+    processed_sentences = [preprocess_sentence(l) for l in lines[:num_examples] if len(l.split(' '))<=max_sentence_len]
     return processed_sentences
 
 
