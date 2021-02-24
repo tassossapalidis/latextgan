@@ -1,7 +1,8 @@
 import numpy as np
-import tensorflow as tf
 import matplotlib.ticker as ticker
 from sklearn.model_selection import train_test_split
+import tensorflow as tf
+import tensorflow_addons as tfa
 
 import argparse
 import json
@@ -166,6 +167,10 @@ def loss_fn(real, pred):
 
 def train_step(inp, tar, hidden, encoder, decoder, tokenizer):
     batch_size = training_parameters['batch_size']
+    learning_rate = training_parameters['learning_rate']
+    weight_decay = training_parameters['weight_decay'] # if using AdamW
+    beta_1 = training_parameters['beta_1']
+    beta_2 = training_parameters['beta_2']
     optimizer = eval(training_parameters['optimizer'])
 
     loss = 0
@@ -201,6 +206,10 @@ def train_step(inp, tar, hidden, encoder, decoder, tokenizer):
 def train_autoencoder(train_set, encoder, decoder, tokenizer, steps_per_epoch, dev_set, num_dev_examples):
 
     num_epochs = training_parameters['epochs']
+    learning_rate = training_parameters['learning_rate']
+    weight_decay = training_parameters['weight_decay'] # if using AdamW
+    beta_1 = training_parameters['beta_1']
+    beta_2 = training_parameters['beta_2']
     optimizer = eval(training_parameters['optimizer'])
 
     # define checkpoints
@@ -240,7 +249,7 @@ def train_autoencoder(train_set, encoder, decoder, tokenizer, steps_per_epoch, d
                 print('Epoch {} Batch {} Loss {:.4f}'.format(epoch + 1,
                                                              batch,
                                                              batch_loss.numpy()))
-        # saving (checkpoint) the model every 2 epochs
+        # saving (checkpoint) the model every save_freq epochs
         if (epoch + 1) % save_freq == 0:
             manager.save()
 
@@ -340,6 +349,10 @@ def evaluate_sentences(train_data, tokenizer = None):
     vocab_size = len(tokenizer.word_index)+1
 
     ## load model from checkpoint
+    learning_rate = training_parameters['learning_rate']
+    weight_decay = training_parameters['weight_decay'] # if using AdamW
+    beta_1 = training_parameters['beta_1']
+    beta_2 = training_parameters['beta_2']
     optimizer = eval(training_parameters['optimizer'])
     encoder = Encoder(vocab_size)
     decoder = Decoder(vocab_size)

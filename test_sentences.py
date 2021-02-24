@@ -3,6 +3,7 @@ import json
 import random
 from nltk.translate.bleu_score import sentence_bleu
 import tensorflow as tf
+import tensorflow_addons as tfa
 import warnings
 
 import autoencoder
@@ -32,6 +33,10 @@ def main(train_data, dev_data):
     vocab_size = len(tokenizer.word_index)+1
 
     ## load model from checkpoint
+    learning_rate = training_parameters['learning_rate']
+    weight_decay = training_parameters['weight_decay'] # if using AdamW
+    beta_1 = training_parameters['beta_1']
+    beta_2 = training_parameters['beta_2']
     optimizer = eval(training_parameters['optimizer'])
     encoder = autoencoder.Encoder(vocab_size)
     decoder = autoencoder.Decoder(vocab_size)

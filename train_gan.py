@@ -1,14 +1,28 @@
+import argparse
+import json
+import matplotlib.pyplot as plt
+import numpy as np
 import os
 import tensorflow as tf
-import numpy as np
-from autoencoder_reg import Encoder, Decoder, load_dataset
-from gan import Generator, Discriminator
-from eval_ae import decode_sentence
-import matplotlib.pyplot as plt
+import tensorflow_addons as tfa
 
-## ALSO NEED AUTOENCODER MODEL
-## since this model will be pre-trained, we need to load the weights in
-## possibly just pass path to model.save() file
+import autoencoder
+from gan import Generator, Discriminator
+
+## get autoencoder parameters
+with open('autoencoder_parameters.json') as ae_file:
+  ae_parameters = json.load(ae_file)
+ae_data_parameters = ae_parameters['data_parameters']
+ae_training_parameters = ae_parameters['training_parameters']
+ae_architecture_parameters = ae_parameters['architecture_parameters']
+ae_model_save_parameters = ae_parameters['model_save_parameters']
+
+## get gan parameters
+with open('gan_parameters.json') as gan_file:
+  gan_parameters = json.load(gan_file)
+gan_training_parameters = gan_parameters['training_parameters']
+gan_architecture_parameters = gan_parameters['architecture_parameters']
+gan_model_save_parameters = gan_parameters['model_save_parameters']
 
 '''
 assumptions:
@@ -24,88 +38,9 @@ assumptions:
         epochs -- number of epochs to train for
 '''
 
-# call constructors
-'''encoder = Encoder(args.units...)
-decoder = Decoder(args.units...)
-generator = ...
-discriminator = ..'''
-
-
-# make a checkpoint and restore autoencoder weights
-# this might have to be saved_model; not sure
-#checkpoint.restore_from_checkpoint(...)
-
-max_sentence_len = 40
-# maximum number of words in vocabulary
-max_vocab = 20000
-# number of examples (sentences) to use
-#num_train_examples = 200000
-num_train_examples = 150000
-num_dev_examples = 2000
-
-## create datasets
-input_tensor_train, target_tensor_train, tokenizer = load_dataset("train.txt", max_sentence_len, max_vocab, num_train_examples)
-'''dev = create_dataset(dev_data, num_dev_examples)
-input_tensor_dev = tokenizer.texts_to_sequences(dev)
-target_tensor_dev = input_tensor_dev
-input_tensor_dev = tf.keras.preprocessing.sequence.pad_sequences(input_tensor_dev, padding='post',
-                                                        truncating = 'post', maxlen = max_sentence_len, value=0)
-target_tensor_dev = tf.keras.preprocessing.sequence.pad_sequences(target_tensor_dev, padding='post',
-                                                        truncating = 'post', maxlen = max_sentence_len, value=0)
-'''
-## define variables for training
-# Number of epochs
-EPOCHS = 100
-# restore from checkpoint file?
-restore_model = True
-# define batches
-BUFFER_SIZE = len(input_tensor_train)
-BATCH_SIZE = 64
-steps_per_epoch = len(input_tensor_train)//BATCH_SIZE
-# define autoencoder architecture
-embedding_dim = 128
-#units = 256
-units = 512
-# n train == 3: model deteriorates to only outputting a single sentence
-n_generator_train = 5
-# Calculate max_length of the tensors
-max_length = target_tensor_train.shape[1]
-# calculate vocab size (+1 for zero padding)
-vocab_size = len(tokenizer.word_index)+1
-# number of dev examples
-#num_dev_examples = len(target_tensor_dev)
-# define optimizer (Adam)
-ae_optimizer = tf.keras.optimizers.Adam()
-# before: lr of 0.0005
-# hparams from 'improved training of wgans'
-optimizer = tf.keras.optimizers.Adam(learning_rate = 0.0001, beta_1 = 0.5, beta_2 = 0.9)
-
-## create datasets
-train_set = tf.data.Dataset.from_tensor_slices((input_tensor_train, target_tensor_train)).shuffle(BUFFER_SIZE)
-train_set = train_set.batch(BATCH_SIZE, drop_remainder=True)
-
-#dev_set = tf.data.Dataset.from_tensor_slices((input_tensor_dev, target_tensor_dev))
-#dev_batch = dev_set.batch(num_dev_examples)
-
-## construct model
-encoder = Encoder(BATCH_SIZE, vocab_size, embedding_dim, units, 1)
-#decoder = Decoder(vocab_size, embedding_dim, units*2, 1)
-decoder = Decoder(vocab_size, embedding_dim, units*2, 1)
-generator = Generator(5, units*2)
-discriminator = Discriminator(5, units*2)
-
-
-checkpoint_dir = "./training_ckpt_2"
-checkpoint_prefix = os.path.join(checkpoint_dir, "ckpt")
-checkpoint = tf.train.Checkpoint(optimizer=ae_optimizer,
-                                 encoder=encoder,
-                                 decoder=decoder)
-print(tf.train.latest_checkpoint(checkpoint_dir))
-checkpoint.restore(tf.train.latest_checkpoint(checkpoint_dir))
-
 # real_data shape == fake_data shape (batch_size, units)
-def grad_penalty(real_data, fake_data):
-    alpha = tf.random.uniform(shape = (BATCH_SIZE, 1), minval = 0, maxval = 1)
+def grad_penalty(real_data, fake_data, batch_size, discriminator):
+    alpha = tf.random.uniform(shape = (batch_size, 1), minval = 0, maxval = 1)
     vect = alpha*real_data + (1-alpha)*fake_data
     with tf.GradientTape() as tape:
         # prediction shape: (batch_size, 1)
@@ -122,19 +57,15 @@ def grad_penalty(real_data, fake_data):
 def discriminator_loss(real_pred, fake_pred):
     ## Wasserstein loss -- no log here
     return -tf.math.reduce_mean(real_pred) + tf.math.reduce_mean(fake_pred)
-    #print("fake: {}".format(fake_pred))
-    #return -tf.math.reduce_mean(tf.math.log(real_pred)) - tf.math.reduce_mean(tf.math.log(1-fake_pred))
 
 def generator_loss(fake_pred):
     return -tf.math.reduce_mean(fake_pred)
-    #print(fake_pred)
-    #return -tf.math.reduce_mean(tf.math.log(fake_pred))
 
-def train_step_disc(real_data_batch):
+def train_step_disc(real_data_batch, encoder, batch_size, generator, discriminator, optimizer):
     disc_loss = 0
     with tf.GradientTape() as tape:
-        #z = tf.random.normal((args.batch_size, args.units))
-        z = tf.random.normal((BATCH_SIZE, units*2))
+        units = ae_architecture_parameters['units']
+        z = tf.random.normal((batch_size, units*2))
         hidden = encoder.initialize_hidden_state()
         _, real_vects = encoder(real_data_batch, hidden)
         ## real_vects shape: (batch_size, units)
@@ -147,20 +78,18 @@ def train_step_disc(real_data_batch):
         fake_predictions = discriminator(fake_vects)
         disc_loss = discriminator_loss(real_predictions, fake_predictions)
         # 10 has worked best so far here
-        disc_loss += 10*grad_penalty(real_vects, fake_vects)
+        disc_loss += 10*grad_penalty(real_vects, fake_vects, batch_size, discriminator)
     variables = discriminator.trainable_variables
     gradients = tape.gradient(disc_loss, variables)
     optimizer.apply_gradients(zip(gradients, variables))
 
     return disc_loss
 
-
-def train_step_gen():
+def train_step_gen(batch_size, generator, discriminator, optimizer):
     gen_loss = 0
     with tf.GradientTape() as tape:
-        #z = tf.random.normal((args.batch_size, args.units))
-        z = tf.random.normal((BATCH_SIZE, units*2))
-        #print(generator(z))
+        units = ae_architecture_parameters['units']
+        z = tf.random.normal((batch_size, units*2))
         fake_predictions = discriminator(generator(z))
         gen_loss = generator_loss(fake_predictions)
 
@@ -170,20 +99,80 @@ def train_step_gen():
 
     return gen_loss
 
-def main():
-    optimizer = tf.keras.optimizers.Adam()
+def decode_sentence(decoder, enc_hidden, tokenizer):
+    result = ''
+    dec_hidden = enc_hidden
+    dec_hidden = [dec_hidden for _ in range(decoder.num_layers)]
+    dec_input = tf.expand_dims([tokenizer.word_index['<start>']], 0)
+
+    for t in range(50):
+        #predictions, dec_hidden = decoder(dec_input,
+        #                                  dec_hidden, output)
+        prediction, dec_hidden = decoder(dec_input, dec_hidden)
+
+        predicted_id = tf.argmax(prediction[0]).numpy()
+
+        result += tokenizer.index_word[predicted_id] + ' '
+
+        dec_input = tf.expand_dims([predicted_id], 0)
+        if tokenizer.index_word[predicted_id] == '<end>':
+            break
+
+    print(result)
+
+def train_gan(train_set, generator, discriminator, encoder, decoder, tokenizer, batch_size):
+
+    # define num epochs
+    num_epochs = gan_training_parameters['epochs']
+    # define generator training frequency
+    n_generator_train = gan_training_parameters['n_generator_train']
+    # define ae architecture
+    units = ae_architecture_parameters['units']
+    # define optimizer
+    learning_rate = gan_training_parameters['learning_rate']
+    weight_decay = gan_training_parameters['weight_decay']
+    beta_1 = gan_training_parameters['beta_1']
+    beta_2 = gan_training_parameters['beta_2']
+    gan_optimizer = eval(gan_training_parameters['optimizer'])
+
+    # define checkpoints
+    gan_checkpoint_dir = gan_model_save_parameters['checkpoint_directory']
+    gan_checkpoint = tf.train.Checkpoint(optimizer=gan_optimizer,
+                                         generator=generator,
+                                         discriminator=discriminator)
+    max_to_keep = gan_model_save_parameters['max_to_keep']
+    gan_manager = tf.train.CheckpointManager(gan_checkpoint, gan_checkpoint_dir, 
+                                             max_to_keep=max_to_keep,
+                                             checkpoint_name = "ckpt")
+
+    # model will be saved after this many epochs
+    save_freq = gan_model_save_parameters['save_frequency']
+
+    # current epoch
+    curr_epoch = 0
+    if (gan_model_save_parameters['restore_model'] and os.path.isdir(gan_checkpoint_dir)):
+        latest_checkpoint = tf.train.latest_checkpoint(gan_checkpoint_dir)
+        curr_epoch = int(latest_checkpoint.split('-')[-1]) * save_freq
+        curr_epoch = curr_epoch if curr_epoch <= num_epochs else num_epochs
+
+        # restart training if already at num_epochs
+        if curr_epoch < num_epochs:
+            gan_checkpoint.restore(latest_checkpoint)
+            print('GAN restored from checkpoint at epoch {}.'.format(curr_epoch))
+
+    ## training steps
     disc_losses = []
     gen_losses = []
-    for epoch in range(EPOCHS):
+    for epoch in range(num_epochs):
         print("epoch {}".format(epoch+1))
         disc_loss = 0
         gen_loss = 0
         for (i, (x, y)) in enumerate(train_set.take(100)):
-            disc_loss += train_step_disc(x)
+            disc_loss += train_step_disc(x, encoder, batch_size, generator, discriminator, gan_optimizer)
             # i think this is the way its implemented in the wgan paper
             # training generator every n batches rather than every n epochs
             if (i % n_generator_train) == 0:
-                gen_loss += train_step_gen()
+                gen_loss += train_step_gen(batch_size, generator, discriminator, gan_optimizer)
         disc_loss /= (i+1) 
         gen_loss /= (np.floor((i+1)/n_generator_train))
         print(disc_loss)
@@ -191,25 +180,73 @@ def main():
         print(gen_loss)
         gen_losses.append(gen_loss)
 
-        '''if (epoch % n_generator_train) == 0:
-            gen_loss = 0
-
-            # change this. don't actually need data but just want to make sure
-            # generator is getting same number of updates as discriminator.
-            # also not totally sure if this is the right thing to do
-            for i, _ in enumerate(train_set.take(100)):
-                gen_loss += train_step_gen()
-                #print("gen loss: {}".format(gen_loss))
-            gen_loss /= (i+1)
-            print("gen loss: {}".format(gen_loss))
-            gen_losses.append(gen_loss)'''
-
         decode_sentence(decoder, generator(tf.random.normal((1, units*2))), tokenizer)
-    
-    plt.plot(range(100), disc_losses)
-    plt.plot(range(0, 100), gen_losses)
 
+        # saving (checkpoint) the model every save_freq epochs
+        if (epoch + 1) % save_freq == 0:
+            gan_manager.save()
+    
+    plt.plot(range(0, num_epochs), disc_losses)
+    plt.plot(range(0, num_epochs), gen_losses)
     plt.show()
 
+    return gan_checkpoint
+
+def main(train_data):
+    ## rebuild autoencoder from checkpoint
+    # Create vocabulary
+    input_tensor_train, target_tensor_train, tokenizer = autoencoder.load_dataset(train_data, ae_data_parameters['num_train_examples'])
+    vocab_size = len(tokenizer.word_index)+1
+    max_length = target_tensor_train.shape[1]
+    # load model from checkpoint
+    learning_rate = gan_training_parameters['learning_rate']
+    weight_decay = gan_training_parameters['weight_decay']
+    beta_1 = gan_training_parameters['beta_1']
+    beta_2 = gan_training_parameters['beta_2']
+    ae_optimizer = eval(ae_training_parameters['optimizer'])
+    encoder = autoencoder.Encoder(vocab_size)
+    decoder = autoencoder.Decoder(vocab_size)
+    checkpoint = tf.train.Checkpoint(optimizer=ae_optimizer,
+                                        encoder=encoder,
+                                        decoder=decoder)
+    checkpoint_dir = ae_model_save_parameters['checkpoint_directory']
+    latest_checkpoint = tf.train.latest_checkpoint(checkpoint_dir)
+    checkpoint.restore(latest_checkpoint)
+    print("AE restored from: {}".format(tf.train.latest_checkpoint(checkpoint_dir)))
+
+    ## define variables for training
+    # number of epochs
+    EPOCHS = gan_training_parameters['epochs']
+    # restore from checkpoint file?
+    restore_model = gan_model_save_parameters['restore_model']
+    # define batches
+    BUFFER_SIZE = len(input_tensor_train)
+    BATCH_SIZE = gan_training_parameters['batch_size']
+    steps_per_epoch = len(input_tensor_train)//BATCH_SIZE
+    # define autoencoder architecture
+    units = ae_architecture_parameters['units']
+
+    ## create datasets
+    train_set = tf.data.Dataset.from_tensor_slices((input_tensor_train, target_tensor_train)).shuffle(BUFFER_SIZE)
+    train_set = train_set.batch(BATCH_SIZE, drop_remainder=True)
+
+    ## construct model
+    gen_layers = gan_architecture_parameters['generator_num_layers']
+    disc_layers = gan_architecture_parameters['discriminator_num_layers']
+    generator = Generator(gen_layers, units*2)
+    discriminator = Discriminator(disc_layers, units*2)
+
+    ## train GAN
+    gan_checkpoint = train_gan(train_set, generator, discriminator, encoder, decoder, tokenizer, BATCH_SIZE)
+
+    return gan_checkpoint
+
 if __name__ == '__main__':
-    main()
+    # Add input arguments
+    parser = parser = argparse.ArgumentParser()
+    parser.add_argument("--train_data", type=str, help="path to train dataset, one sentence per line.")
+
+    args = parser.parse_args()
+    train_data = args.train_data
+
+    main(train_data)

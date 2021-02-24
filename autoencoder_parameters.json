@@ -12,7 +12,11 @@
         "initializer": "glorot_uniform",
         "dropout": 0.4,
         "recurrent_dropout": 0.2,
-        "optimizer": "tf.keras.optimizers.Adam()",
+        "learning_rate": 0.001,
+        "weight_decay": 0.00025,
+        "beta_1": 0.5,
+        "beta_2": 0.9,
+        "optimizer": "tfa.optimizers.AdamW(learning_rate=learning_rate, weight_decay=weight_decay)",
         "loss_function": "tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True, reduction='none')"
     },
     "architecture_parameters": {
@@ -22,7 +26,7 @@
         "decoder_gru_layers": 1
     },
     "model_save_parameters": {
-        "checkpoint_directory": "./checkpoints",
+        "checkpoint_directory": "./ae_checkpoints",
         "save_frequency": 2,
         "max_to_keep": 2,
         "restore_model": true
