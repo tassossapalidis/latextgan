@@ -1,7 +1,9 @@
 import argparse
 import json
 import random
+from nltk.translate.bleu_score import sentence_bleu
 import tensorflow as tf
+import warnings
 
 import autoencoder
 
@@ -73,7 +75,32 @@ def main(train_data, dev_data):
                 break
         
         print('Original Sentence: {}'.format(sentence))
-        print('Output Sentence:   <start> {} \n'.format(result))
+        print('Output Sentence:   <start> {}'.format(result))
+
+        # compute BLEU score
+        sentence = sentence.split(" ")
+        result = result.split(" ")
+        result = tokenizer.texts_to_sequences(result)
+        result = ['<start>'] + tokenizer.sequences_to_texts(result)
+        result = result[:-1]
+
+        weights1 = (1, 0, 0, 0)
+        weights2 = (1/2, 1/2, 0, 0)
+        weights3 = (1/3, 1/3, 1/3, 0)
+        weights4 = (1/4, 1/4, 1/4, 1/4)
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            BLEU1 = sentence_bleu([sentence], result, weights = weights1)
+            BLEU2 = sentence_bleu([sentence], result, weights = weights2)
+            BLEU3 = sentence_bleu([sentence], result, weights = weights3)
+            BLEU4 = sentence_bleu([sentence], result, weights = weights4)
+
+        print('BLEU-1: {}'.format(BLEU1))
+        print('BLEU-2: {}'.format(BLEU2))
+        print('BLEU-3: {}'.format(BLEU3))
+        print('BLEU-4: {}'.format(BLEU4))
+        print('')
 
 if __name__ == '__main__':
     # Add input arguments
