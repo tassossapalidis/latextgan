@@ -120,7 +120,7 @@ def decode_sentence(decoder, enc_hidden, tokenizer):
 
     print(result)
 
-def train_gan(train_set, generator, discriminator, encoder, decoder, tokenizer, batch_size):
+def train_gan(train_set, generator, discriminator, encoder, decoder, tokenizer, batch_size, steps_per_epoch):
 
     # define num epochs
     num_epochs = gan_training_parameters['epochs']
@@ -163,16 +163,20 @@ def train_gan(train_set, generator, discriminator, encoder, decoder, tokenizer, 
     ## training steps
     disc_losses = []
     gen_losses = []
-    for epoch in range(num_epochs):
+    for epoch in range(curr_epoch, gan_training_parameters['epochs']):
         print("epoch {}".format(epoch+1))
         disc_loss = 0
         gen_loss = 0
-        for (i, (x, y)) in enumerate(train_set.take(100)):
+        for (i, (x, y)) in enumerate(train_set.take(steps_per_epoch)):
             disc_loss += train_step_disc(x, encoder, batch_size, generator, discriminator, gan_optimizer)
             # i think this is the way its implemented in the wgan paper
             # training generator every n batches rather than every n epochs
             if (i % n_generator_train) == 0:
                 gen_loss += train_step_gen(batch_size, generator, discriminator, gan_optimizer)
+            if (i % 100) == 0:
+                 print("batch {}".format(i))
+                 print("Discriminator Loss: {}".format(disc_loss))
+                 print("Generator Loss: {}".format(gen_loss))
         disc_loss /= (i+1) 
         gen_loss /= (np.floor((i+1)/n_generator_train))
         print(disc_loss)
@@ -180,7 +184,11 @@ def train_gan(train_set, generator, discriminator, encoder, decoder, tokenizer, 
         print(gen_loss)
         gen_losses.append(gen_loss)
 
-        decode_sentence(decoder, generator(tf.random.normal((1, units*2))), tokenizer)
+        if (epoch + 1) % save_freq == 0:
+            gan_manager.save()
+        
+        for _ in range(5):
+            decode_sentence(decoder, generator(tf.random.normal((1, units*2))), tokenizer)
 
         # saving (checkpoint) the model every save_freq epochs
         if (epoch + 1) % save_freq == 0:
@@ -217,8 +225,6 @@ def main(train_data):
     ## define variables for training
     # number of epochs
     EPOCHS = gan_training_parameters['epochs']
-    # restore from checkpoint file?
-    restore_model = gan_model_save_parameters['restore_model']
     # define batches
     BUFFER_SIZE = len(input_tensor_train)
     BATCH_SIZE = gan_training_parameters['batch_size']
@@ -237,7 +243,7 @@ def main(train_data):
     discriminator = Discriminator(disc_layers, units*2)
 
     ## train GAN
-    gan_checkpoint = train_gan(train_set, generator, discriminator, encoder, decoder, tokenizer, BATCH_SIZE)
+    gan_checkpoint = train_gan(train_set, generator, discriminator, encoder, decoder, tokenizer, BATCH_SIZE, steps_per_epoch)
 
     return gan_checkpoint
 
