@@ -5,7 +5,7 @@ Authors: [Anna Shors](https://github.com/ashors1), [Andrew Freeman](https://gith
 *__Please note that this repository is a work in progress__*
 
 ## Overview
-Please read our **project proposal** or **milestone report** for details on this project. The abstract is included here:
+Please read our [project proposal](https://github.com/tassossapalidis/latextgan/blob/main/src/CS_230_Project_Proposal.pdf) or [milestone report](https://github.com/tassossapalidis/latextgan/blob/main/src/CS230_Milestone.pdf) for details on this project. The abstract is included here:
 > Despite their success in other fields, Generative Adversarial Networks (GANs) have seen little success in the area of text generation due to the need to "pick" words to generate at each timestep. This discrete "picking" process is non-differentiable and makes it difficult to pass gradients from the discriminator to the generator during training. In this paper, we explore a method for using GANs for text generation, which consists of training a generator to output sentence encodings, and using a pretrained RNN decoder to decode the encodings into human-readable sentences. We compare some early stage results against a vanilla RNN baseline. We also demonstrate how this method can be expanded to generate coherent paragraphs. 
 
 ## File Usage
