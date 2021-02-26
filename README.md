@@ -10,7 +10,7 @@ Please read our [project proposal](https://github.com/tassossapalidis/latextgan/
 
 ## File Usage
 ### Preprocess Data
-In order to be used as inputs for the following process, the data must be in the form of a text file with one sentence per line. [data_cleaning.py](https://github.com/tassossapalidis/latextgan/blob/main/data/data_cleaning.py) can be used as a template script to convert raw text data to this format.
+In order to be used as inputs for the following process, the data must be in the form of a text file with one sentence per line. [data_cleaning.py](https://github.com/tassossapalidis/latextgan/blob/main/data_cleaning.py) can be used as a template script to convert raw text data to this format.
 ### Training the Autoencoder
 1. Configure the autoencoder training parameters and architecture using [autoencoder_parameters.json](https://github.com/tassossapalidis/latextgan/blob/main/autoencoder_parameters.json).
 2. Run [autoencoder.py](https://github.com/tassossapalidis/latextgan/blob/main/autoencoder.py), using the training data and validation data text files as command-line arguments.
