@@ -23,6 +23,7 @@ model_save_parameters = parameters['model_save_parameters']
 def main(train_data, dev_data):
     with open(dev_data) as file:
         lines = list(file.read().splitlines())
+    lines = [x for x in lines if len(x.split(' '))<= data_parameters['max_sentence_length']]
 
     test_sentences = []
     for i in range(num_sentences):
