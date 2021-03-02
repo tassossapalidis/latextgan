@@ -4,7 +4,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 import tensorflow as tf
-import tensorflow_addons as tfa
 
 import autoencoder
 from gan import Generator, Discriminator
@@ -120,7 +119,7 @@ def decode_sentence(decoder, enc_hidden, tokenizer):
 
     print(result)
 
-def train_gan(train_set, generator, discriminator, encoder, decoder, tokenizer, batch_size, steps_per_epoch):
+def train_gan(train_set, generator, discriminator, encoder, decoder, tokenizer, gan_optimizer, batch_size, steps_per_epoch):
 
     # define num epochs
     num_epochs = gan_training_parameters['epochs']
@@ -128,12 +127,6 @@ def train_gan(train_set, generator, discriminator, encoder, decoder, tokenizer, 
     n_generator_train = gan_training_parameters['n_generator_train']
     # define ae architecture
     units = ae_architecture_parameters['units']
-    # define optimizer
-    learning_rate = gan_training_parameters['learning_rate']
-    weight_decay = gan_training_parameters['weight_decay']
-    beta_1 = gan_training_parameters['beta_1']
-    beta_2 = gan_training_parameters['beta_2']
-    gan_optimizer = eval(gan_training_parameters['optimizer'])
 
     # define checkpoints
     gan_checkpoint_dir = gan_model_save_parameters['checkpoint_directory']
@@ -223,8 +216,6 @@ def main(train_data):
     print("AE restored from: {}".format(tf.train.latest_checkpoint(checkpoint_dir)))
 
     ## define variables for training
-    # number of epochs
-    EPOCHS = gan_training_parameters['epochs']
     # define batches
     BUFFER_SIZE = len(input_tensor_train)
     BATCH_SIZE = gan_training_parameters['batch_size']
@@ -242,8 +233,15 @@ def main(train_data):
     generator = Generator(gen_layers, units*2)
     discriminator = Discriminator(disc_layers, units*2)
 
+    ## define optimizer
+    learning_rate = gan_training_parameters['learning_rate']
+    weight_decay = gan_training_parameters['weight_decay']
+    beta_1 = gan_training_parameters['beta_1']
+    beta_2 = gan_training_parameters['beta_2']
+    gan_optimizer = eval(gan_training_parameters['optimizer'])
+
     ## train GAN
-    gan_checkpoint = train_gan(train_set, generator, discriminator, encoder, decoder, tokenizer, BATCH_SIZE, steps_per_epoch)
+    gan_checkpoint = train_gan(train_set, generator, discriminator, encoder, decoder, tokenizer, gan_optimizer, BATCH_SIZE, steps_per_epoch)
 
     return gan_checkpoint
 
