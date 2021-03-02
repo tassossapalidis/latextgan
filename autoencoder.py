@@ -2,7 +2,6 @@ import numpy as np
 import matplotlib.ticker as ticker
 from sklearn.model_selection import train_test_split
 import tensorflow as tf
-import tensorflow_addons as tfa
 
 import argparse
 import json
@@ -165,13 +164,8 @@ def loss_fn(real, pred):
  
     return tf.reduce_mean(loss_)
 
-def train_step(inp, tar, hidden, encoder, decoder, tokenizer):
+def train_step(inp, tar, hidden, encoder, decoder, tokenizer, optimizer):
     batch_size = training_parameters['batch_size']
-    learning_rate = training_parameters['learning_rate']
-    weight_decay = training_parameters['weight_decay'] # if using AdamW
-    beta_1 = training_parameters['beta_1']
-    beta_2 = training_parameters['beta_2']
-    optimizer = eval(training_parameters['optimizer'])
 
     loss = 0
 
@@ -203,14 +197,9 @@ def train_step(inp, tar, hidden, encoder, decoder, tokenizer):
 
         return batch_loss
 
-def train_autoencoder(train_set, encoder, decoder, tokenizer, steps_per_epoch, dev_set, num_dev_examples):
+def train_autoencoder(train_set, encoder, decoder, tokenizer, optimizer, steps_per_epoch, dev_set, num_dev_examples):
 
     num_epochs = training_parameters['epochs']
-    learning_rate = training_parameters['learning_rate']
-    weight_decay = training_parameters['weight_decay'] # if using AdamW
-    beta_1 = training_parameters['beta_1']
-    beta_2 = training_parameters['beta_2']
-    optimizer = eval(training_parameters['optimizer'])
 
     # define checkpoints
     checkpoint_dir = model_save_parameters['checkpoint_directory']
@@ -242,7 +231,7 @@ def train_autoencoder(train_set, encoder, decoder, tokenizer, steps_per_epoch, d
 
         hidden = encoder.initialize_hidden_state()
         for (batch, (inp, targ)) in enumerate(train_set.take(steps_per_epoch)):
-            batch_loss = train_step(inp, targ, hidden, encoder, decoder, tokenizer)
+            batch_loss = train_step(inp, targ, hidden, encoder, decoder, tokenizer, optimizer)
             total_loss += batch_loss
 
             if batch % 100 == 0:
@@ -348,8 +337,7 @@ def evaluate_sentences(train_data, tokenizer = None):
         _, _, tokenizer = load_dataset(train_data, data_parameters['num_train_examples'])
     vocab_size = len(tokenizer.word_index)+1
 
-    ## load model from checkpoint
-    learning_rate = training_parameters['learning_rate']
+    ## load model from checkpoint    learning_rate = training_parameters['learning_rate']
     weight_decay = training_parameters['weight_decay'] # if using AdamW
     beta_1 = training_parameters['beta_1']
     beta_2 = training_parameters['beta_2']
@@ -437,8 +425,14 @@ def main(train_data, dev_data):
     encoder = Encoder(vocab_size)
     decoder = Decoder(vocab_size)
 
+    ## construct optimizer
+    weight_decay = training_parameters['weight_decay'] # if using AdamW
+    beta_1 = training_parameters['beta_1']
+    beta_2 = training_parameters['beta_2']
+    optimizer = eval(training_parameters['optimizer'])
+
     ## train model
-    checkpoint = train_autoencoder(train_set, encoder, decoder, tokenizer, steps_per_epoch, dev_batch, num_dev_examples)
+    checkpoint = train_autoencoder(train_set, encoder, decoder, tokenizer, optimizer, steps_per_epoch, dev_batch, num_dev_examples)
     
     evaluate_sentences(train_data, tokenizer)
 

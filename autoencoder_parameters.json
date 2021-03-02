@@ -1,8 +1,8 @@
 {   
     "data_parameters": {
-        "max_sentence_length": 40,
+        "max_sentence_length": 30,
         "max_vocab": 20000,
-        "num_train_examples": 150000,
+        "num_train_examples": 200000,
         "num_dev_examples": 2000
     },
     "training_parameters": {
@@ -26,10 +26,10 @@
         "decoder_gru_layers": 1
     },
     "model_save_parameters": {
-        "checkpoint_directory": "./ae_checkpoints",
-        "save_frequency": 2,
+        "checkpoint_directory": "/content/drive/MyDrive/CS230project/testing_checkpoints/ae_checkpoints",
+        "save_frequency": 1,
         "max_to_keep": 2,
-        "restore_model": true
+        "restore_model": false
     },
     "test_sentences": [
     ]
