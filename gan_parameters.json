@@ -2,7 +2,7 @@
     "training_parameters": {
         "epochs": 4,
         "batch_size": 64,
-        "n_generator_train": 5,
+        "n_generator_train": 15,
         "learning_rate": 0.0001,
         "weight_decay": 0.00025,
         "beta_1": 0.5,
@@ -10,13 +10,13 @@
         "optimizer": "tf.keras.optimizers.Adam(learning_rate = learning_rate, beta_1 = beta_1, beta_2 = beta_2)"
     },
     "architecture_parameters": {
-        "generator_num_layers": 5,
-        "discriminator_num_layers": 5
+        "generator_num_layers": 40,
+        "discriminator_num_layers": 40
     },
     "model_save_parameters": {
         "checkpoint_directory": "./gan_checkpoints",
-        "save_frequency": 2,
-        "max_to_keep": 2,
+        "save_frequency": 1,
+        "max_to_keep": 5,
         "restore_model": true
     }
 }

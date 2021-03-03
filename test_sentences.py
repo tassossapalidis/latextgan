@@ -2,18 +2,22 @@ import argparse
 import json
 import random
 from nltk.translate.bleu_score import sentence_bleu
+import sys
 import tensorflow as tf
-import tensorflow_addons as tfa
 import warnings
 
 import autoencoder
 
 ########### Input number of random dev sentences to test here ###########
-num_sentences = 15
+num_sentences = 2000
+#########################################################################
+
+########### Select False if evaluating entire dev set ###################
+print_results = False
 #########################################################################
 
 ## get parameters
-with open('autoencoder_parameters.json') as f:
+with open('./autoencoder_parameters.json') as f:
   parameters = json.load(f)
 data_parameters = parameters['data_parameters']
 training_parameters = parameters['training_parameters']
@@ -51,9 +55,14 @@ def main(train_data, dev_data):
     # get parameters
     max_sentence_length = data_parameters['max_sentence_length']
     units = architecture_parameters['units']
+    
+    # get average BLEU
+    BLEU1_avg = 0
+    BLEU2_avg = 0
+    BLEU3_avg = 0
+    BLEU4_avg = 0
 
-    for test_sentence in test_sentences:
-        sentence = test_sentence
+    for sentence in test_sentences:
         sentence = autoencoder.preprocess_sentence(sentence)
         inputs = tokenizer.texts_to_sequences([sentence])[0]
         inputs = tf.keras.preprocessing.sequence.pad_sequences([inputs],
@@ -80,8 +89,9 @@ def main(train_data, dev_data):
             if tokenizer.index_word[predicted_id] == '<end>':
                 break
         
-        print('Original Sentence: {}'.format(sentence))
-        print('Output Sentence:   <start> {}'.format(result))
+        if print_results == True:
+            print('Original Sentence: {}'.format(sentence))
+            print('Output Sentence:   <start> {}'.format(result))
 
         # compute BLEU score
         sentence = sentence.split(" ")
@@ -101,13 +111,29 @@ def main(train_data, dev_data):
             BLEU2 = sentence_bleu([sentence], result, weights = weights2)
             BLEU3 = sentence_bleu([sentence], result, weights = weights3)
             BLEU4 = sentence_bleu([sentence], result, weights = weights4)
+            
+        BLEU1_avg += BLEU1
+        BLEU2_avg += BLEU2
+        BLEU3_avg += BLEU3
+        BLEU4_avg += BLEU4
+        
+        if print_results == True:
+            print('BLEU-1: {}'.format(BLEU1))
+            print('BLEU-2: {}'.format(BLEU2))
+            print('BLEU-3: {}'.format(BLEU3))
+            print('BLEU-4: {}'.format(BLEU4))
+            print('')
 
-        print('BLEU-1: {}'.format(BLEU1))
-        print('BLEU-2: {}'.format(BLEU2))
-        print('BLEU-3: {}'.format(BLEU3))
-        print('BLEU-4: {}'.format(BLEU4))
-        print('')
-
+    BLEU1_avg /= num_sentences
+    BLEU2_avg /= num_sentences
+    BLEU3_avg /= num_sentences
+    BLEU4_avg /= num_sentences
+    
+    print('Average BLEU-1: {}'.format(BLEU1_avg))
+    print('Average BLEU-2: {}'.format(BLEU2_avg))
+    print('Average BLEU-3: {}'.format(BLEU3_avg))
+    print('Average BLEU-4: {}'.format(BLEU4_avg))
+    
 if __name__ == '__main__':
     # Add input arguments
     parser = parser = argparse.ArgumentParser()
