@@ -172,9 +172,9 @@ def train_gan(train_set, generator, discriminator, encoder, decoder, tokenizer, 
                  print("Generator Loss: {}".format(gen_loss))
         disc_loss /= (i+1) 
         gen_loss /= (np.floor((i+1)/n_generator_train))
-        print(disc_loss)
+        print("Epoch Average Discriminator Loss: {}".format(disc_loss))
         disc_losses.append(disc_loss)
-        print(gen_loss)
+        print("Epoch Average Generator Loss: {}".format(gen_loss))
         gen_losses.append(gen_loss)
 
         if (epoch + 1) % save_freq == 0:
