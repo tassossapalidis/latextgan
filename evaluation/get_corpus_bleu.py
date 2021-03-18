@@ -1,32 +1,40 @@
 import argparse
 import json
+import random
 from nltk.translate.bleu_score import sentence_bleu
-
+from progressbar import ProgressBar
+import re
+import sys
 import tensorflow as tf
-import tensorflow_addons as tfa
 import warnings
 
-########### Select False if evaluating entire dev set ###################
+########### Select False if evaluating long sentence set ################
 print_results = False
 #########################################################################
 
 ## get parameters
-with open('./autoencoder_parameters.json') as f:
-  parameters = json.load(f)
-data_parameters = parameters['data_parameters']
+with open('/content/drive/MyDrive/CS230project/model_parameter_tests/workfolder_tassos/autoencoder_parameters.json') as ae_file:
+  ae_parameters = json.load(ae_file)
+ae_data_parameters = ae_parameters['data_parameters']
+
+with open('/content/drive/MyDrive/CS230project/model_parameter_tests/workfolder_tassos/gan_parameters.json') as gan_file:
+  gan_parameters = json.load(gan_file)
+gan_training_parameters = gan_parameters['training_parameters']
 
 def main(train_data, sample_sentences):
     with open(train_data) as corpus_file:
         corpus_sentences = list(corpus_file.read().splitlines())
-
-    corpus_sentences = [x[:-1] + ' .' for x in corpus_sentences[:data_parameters['num_train_examples']]]
+    
+    corpus_sentences = [re.sub(r"(^\"|\"$)", "", x) for x in corpus_sentences]
+    corpus_sentences = [x[:-1] + ' .' for x in corpus_sentences[:gan_training_parameters['num_train_examples']]]
     corpus_sentences = [x.split(" ") for x in corpus_sentences]
+    corpus_sentences = [x for x in corpus_sentences if len(x) <= ae_data_parameters['max_sentence_length']]
 
     with open(sample_sentences) as sample_file:
         sample_sentence_list = list(sample_file.read().splitlines())
     
-    sample_sentence_list = [x[:-1] + ' .' for x in sample_sentence_list]
-    sample_sentence_list = [x.split(" ") for x in sample_sentence_list]
+    sample_sentence_list = [x[:-1] for x in sample_sentence_list]
+    sample_sentence_list = [x.split(" ")[:-1] for x in sample_sentence_list]
     
     # get average BLEU
     BLEU1_avg = 0
@@ -41,14 +49,15 @@ def main(train_data, sample_sentences):
     weights4 = (1/4, 1/4, 1/4, 1/4)
 
     # compute BLEU score
-    for sentence in sample_sentence_list:
-
+    pbar = ProgressBar()
+    for sentence in pbar(sample_sentence_list):
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             BLEU1 = sentence_bleu(corpus_sentences, sentence, weights = weights1)
             BLEU2 = sentence_bleu(corpus_sentences, sentence, weights = weights2)
             BLEU3 = sentence_bleu(corpus_sentences, sentence, weights = weights3)
             BLEU4 = sentence_bleu(corpus_sentences, sentence, weights = weights4)
+            
             
         BLEU1_avg += BLEU1
         BLEU2_avg += BLEU2

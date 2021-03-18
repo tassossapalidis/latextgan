@@ -2,6 +2,7 @@ import argparse
 import json
 import random
 from nltk.translate.bleu_score import sentence_bleu
+import pickle
 import sys
 import tensorflow as tf
 import warnings
@@ -34,7 +35,9 @@ def main(train_data, dev_data):
         test_sentences += [random.choice(lines)]
     
     ## Create vocabulary
-    _, _, tokenizer = autoencoder.load_dataset(train_data, data_parameters['num_train_examples'])
+    with open(model_save_parameters['tokenizer_filename'], 'rb') as handle:
+        tokenizer = pickle.load(handle)
+    print('Tokenizer loaded from: {}'.format(model_save_parameters['tokenizer_filename']))
     vocab_size = len(tokenizer.word_index)+1
 
     ## load model from checkpoint

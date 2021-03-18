@@ -2,11 +2,11 @@
     "data_parameters": {
         "max_sentence_length": 30,
         "max_vocab": 20000,
-        "num_train_examples": 200000,
+        "num_train_examples": 645762,
         "num_dev_examples": 2000
     },
     "training_parameters": {
-        "epochs": 8,
+        "epochs": 4,
         "batch_size": 64,
         "test_dev_frequency": 1,
         "initializer": "glorot_uniform",
@@ -26,11 +26,16 @@
         "decoder_gru_layers": 1
     },
     "model_save_parameters": {
-        "checkpoint_directory": "/content/drive/MyDrive/CS230project/testing_checkpoints/ae_checkpoints",
-        "save_frequency": 1,
+        "checkpoint_directory": "./ae_checkpoints",
+        "tokenizer_filename": "./tokenizer.pickle",
+        "save_frequency": 2,
         "max_to_keep": 2,
-        "restore_model": false
+        "restore_model": true
     },
     "test_sentences": [
+        "Max makes it home and leads Justin, Chuy, and Carmen into the woods to rescue Ray.",
+        "New student Jerry Renault  must submit to the bizarre rituals of his peers and the expectations of the school's administration by selling chocolates as a fundraiser.",
+        "Patty screams as John examines her eyes.",
+        "She now sends poetry to Gabrielle, who dreams of moving to Bourges, where her parents first met, to become an artist."
     ]
 }

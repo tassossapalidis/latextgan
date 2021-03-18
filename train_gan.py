@@ -1,15 +1,17 @@
 import argparse
+import csv
 import json
 import matplotlib.pyplot as plt
 import numpy as np
 import os
+import pickle
 import tensorflow as tf
 
 import autoencoder
 from gan import Generator, Discriminator
 
 ## get autoencoder parameters
-with open('autoencoder_parameters.json') as ae_file:
+with open('./autoencoder_parameters.json') as ae_file:
   ae_parameters = json.load(ae_file)
 ae_data_parameters = ae_parameters['data_parameters']
 ae_training_parameters = ae_parameters['training_parameters']
@@ -17,7 +19,7 @@ ae_architecture_parameters = ae_parameters['architecture_parameters']
 ae_model_save_parameters = ae_parameters['model_save_parameters']
 
 ## get gan parameters
-with open('gan_parameters.json') as gan_file:
+with open('./gan_parameters.json') as gan_file:
   gan_parameters = json.load(gan_file)
 gan_training_parameters = gan_parameters['training_parameters']
 gan_architecture_parameters = gan_parameters['architecture_parameters']
@@ -119,7 +121,7 @@ def decode_sentence(decoder, enc_hidden, tokenizer):
 
     print(result)
 
-def train_gan(train_set, generator, discriminator, encoder, decoder, tokenizer, gan_optimizer, batch_size, steps_per_epoch):
+def train_gan(train_set, generator, discriminator, encoder, decoder, tokenizer, disc_optimizer, gen_optimizer, batch_size, steps_per_epoch):
 
     # define num epochs
     num_epochs = gan_training_parameters['epochs']
@@ -130,7 +132,8 @@ def train_gan(train_set, generator, discriminator, encoder, decoder, tokenizer, 
 
     # define checkpoints
     gan_checkpoint_dir = gan_model_save_parameters['checkpoint_directory']
-    gan_checkpoint = tf.train.Checkpoint(optimizer=gan_optimizer,
+    gan_checkpoint = tf.train.Checkpoint(disc_optimizer=disc_optimizer,
+                                         gen_optimizer=gen_optimizer,
                                          generator=generator,
                                          discriminator=discriminator)
     max_to_keep = gan_model_save_parameters['max_to_keep']
@@ -154,28 +157,30 @@ def train_gan(train_set, generator, discriminator, encoder, decoder, tokenizer, 
             print('GAN restored from checkpoint at epoch {}.'.format(curr_epoch))
 
     ## training steps
-    disc_losses = []
-    gen_losses = []
+    with open(gan_model_save_parameters['losses_filename'], 'a+', newline='') as losses_file:
+        writer = csv.writer(losses_file)
+        writer.writerow(["Epoch", "Batch", "Disc_Loss", "Gen_Loss"])
     for epoch in range(curr_epoch, gan_training_parameters['epochs']):
         print("epoch {}".format(epoch+1))
         disc_loss = 0
         gen_loss = 0
         for (i, (x, y)) in enumerate(train_set.take(steps_per_epoch)):
-            disc_loss += train_step_disc(x, encoder, batch_size, generator, discriminator, gan_optimizer)
-            # i think this is the way its implemented in the wgan paper
-            # training generator every n batches rather than every n epochs
+            batch_disc_loss = train_step_disc(x, encoder, batch_size, generator, discriminator, disc_optimizer)
+            disc_loss += batch_disc_loss
             if (i % n_generator_train) == 0:
-                gen_loss += train_step_gen(batch_size, generator, discriminator, gan_optimizer)
+                batch_gen_loss = train_step_gen(batch_size, generator, discriminator, gen_optimizer)
+                gen_loss += batch_gen_loss
             if (i % 100) == 0:
-                 print("batch {}".format(i))
-                 print("Discriminator Loss: {}".format(disc_loss))
-                 print("Generator Loss: {}".format(gen_loss))
+                print("batch {}".format(i))
+                print("Discriminator Loss: {}".format(batch_disc_loss))
+                print("Generator Loss: {}".format(batch_gen_loss))
+                with open(gan_model_save_parameters['losses_filename'], 'a', newline='') as losses_file:
+                    writer = csv.writer(losses_file)
+                    writer.writerow([epoch, i, batch_disc_loss.numpy(), batch_gen_loss.numpy()])
         disc_loss /= (i+1) 
         gen_loss /= (np.floor((i+1)/n_generator_train))
         print("Epoch Average Discriminator Loss: {}".format(disc_loss))
-        disc_losses.append(disc_loss)
         print("Epoch Average Generator Loss: {}".format(gen_loss))
-        gen_losses.append(gen_loss)
 
         if (epoch + 1) % save_freq == 0:
             gan_manager.save()
@@ -186,19 +191,31 @@ def train_gan(train_set, generator, discriminator, encoder, decoder, tokenizer, 
         # saving (checkpoint) the model every save_freq epochs
         if (epoch + 1) % save_freq == 0:
             gan_manager.save()
-    
-    plt.plot(range(0, num_epochs), disc_losses)
-    plt.plot(range(0, num_epochs), gen_losses)
-    plt.show()
 
     return gan_checkpoint
 
 def main(train_data):
     ## rebuild autoencoder from checkpoint
-    # Create vocabulary
-    input_tensor_train, target_tensor_train, tokenizer = autoencoder.load_dataset(train_data, ae_data_parameters['num_train_examples'])
+    # create training set
+    
+    #input_tensor_train, target_tensor_train, _ = autoencoder.load_dataset(train_data, gan_training_parameters['num_train_examples'])
+    #max_length = target_tensor_train.shape[1]
+    
+    # get tokenizer
+    with open(ae_model_save_parameters['tokenizer_filename'], 'rb') as handle:
+        tokenizer = pickle.load(handle)
+    print('Tokenizer loaded from: {}'.format(ae_model_save_parameters['tokenizer_filename']))
     vocab_size = len(tokenizer.word_index)+1
-    max_length = target_tensor_train.shape[1]
+
+    ''' added below @ tassos please confirm that this is correct '''
+    max_length = ae_data_parameters['max_sentence_length']
+    train = autoencoder.create_dataset(train_data, gan_training_parameters['num_train_examples'])
+    input_tensor_train = tokenizer.texts_to_sequences(train)
+    input_tensor_train = tf.keras.preprocessing.sequence.pad_sequences(input_tensor_train, padding='post',
+                         truncating = 'post', maxlen = max_length, value=0)
+    target_tensor_train = input_tensor_train
+    ''' end of additions '''
+
     # load model from checkpoint
     learning_rate = gan_training_parameters['learning_rate']
     weight_decay = gan_training_parameters['weight_decay']
@@ -233,15 +250,16 @@ def main(train_data):
     generator = Generator(gen_layers, units*2)
     discriminator = Discriminator(disc_layers, units*2)
 
-    ## define optimizer
+    ## define optimizers
     learning_rate = gan_training_parameters['learning_rate']
     weight_decay = gan_training_parameters['weight_decay']
     beta_1 = gan_training_parameters['beta_1']
     beta_2 = gan_training_parameters['beta_2']
-    gan_optimizer = eval(gan_training_parameters['optimizer'])
+    disc_optimizer = eval(gan_training_parameters['optimizer'])
+    gen_optimizer = eval(gan_training_parameters['optimizer'])
 
     ## train GAN
-    gan_checkpoint = train_gan(train_set, generator, discriminator, encoder, decoder, tokenizer, gan_optimizer, BATCH_SIZE, steps_per_epoch)
+    gan_checkpoint = train_gan(train_set, generator, discriminator, encoder, decoder, tokenizer, disc_optimizer, gen_optimizer, BATCH_SIZE, steps_per_epoch)
 
     return gan_checkpoint
 

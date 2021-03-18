@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.ticker as ticker
+import pickle
 from sklearn.model_selection import train_test_split
 import tensorflow as tf
 
@@ -10,7 +11,7 @@ import re
 import unicodedata
 
 ## get parameters
-with open('autoencoder_parameters.json') as f:
+with open('./autoencoder_parameters.json') as f:
   parameters = json.load(f)
 data_parameters = parameters['data_parameters']
 training_parameters = parameters['training_parameters']
@@ -387,8 +388,6 @@ def evaluate_sentences(train_data, tokenizer = None):
         print('Output Sentence:   <start> {} \n'.format(result))
 
 def main(train_data, dev_data):
-    ## for replication and model restoration
-    #np.random.seed(1234)
 
     ## get parameter values
     num_train_examples = data_parameters['num_train_examples']
@@ -397,6 +396,9 @@ def main(train_data, dev_data):
 
     ## create datasets
     input_tensor_train, target_tensor_train, tokenizer = load_dataset(train_data, num_train_examples)
+    with open(model_save_parameters['tokenizer_filename'], 'wb') as handle:
+        pickle.dump(tokenizer, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    print('Tokenizer saved to: {}'.format(model_save_parameters['tokenizer_filename']))
     dev = create_dataset(dev_data, num_dev_examples)
     input_tensor_dev = tokenizer.texts_to_sequences(dev)
     target_tensor_dev = input_tensor_dev
