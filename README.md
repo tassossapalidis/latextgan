@@ -3,7 +3,7 @@
 Authors: [Anna Shors](https://github.com/ashors1), [Andrew Freeman](https://github.com/aefreeman), [Anastasios Sapalidis](https://github.com/tassossapalidis)
 
 ## Overview
-Please read our [project proposal](https://github.com/tassossapalidis/latextgan/blob/main/src/CS_230_Project_Proposal.pdf) or [milestone report](https://github.com/tassossapalidis/latextgan/blob/main/src/CS230_Milestone.pdf) for details on this project. The abstract is included here:
+Please read our [Project Proposal](https://github.com/tassossapalidis/latextgan/blob/main/src/CS_230_Project_Proposal.pdf), [Milestone Report](https://github.com/tassossapalidis/latextgan/blob/main/src/CS230_Milestone.pdf), or [Final Report](https://github.com/tassossapalidis/latextgan/blob/main/src/CS230_Final_Report.pdf) for details on this project. The abstract is included here:
 > Despite their success in other fields, General Adversarial Networks have gained little traction in the field of text generation due to the need to choose words to generate at each timestep. This discrete "picking" function poses a challenge, as it prevents gradients from being passed back from the discriminator to the generator. In this paper, we explore an alternative method of using GANs for text generation in which the generator works to directly output sentence encodings that can be decoded using a pretrained decoder. While our generated sentences lack the fluency of the language model baseline, we show that this method has the potential to generate creative, realistic sentences and would benefit from further exploration in future works. 
 
 ## File Usage
